@@ -26,6 +26,16 @@ class MongoDB:
             raise
 
     @classmethod
+    async def get_database(cls):
+        """
+        Returns the database instance. If not connected yet, establishes connection first.
+        """
+        if cls.database is None:
+            await cls.connect_to_mongo()
+        return cls.database
+    
+
+    @classmethod
     async def close_mongo_connection(cls):
         if cls.client:
             cls.client.close()
@@ -45,7 +55,7 @@ class MongoDB:
         except Exception as e:
             print(f"Error initializing database: {e}")
             raise
-
+    
     @classmethod
     async def create_indexes(cls):
         """Create all necessary indexes"""
@@ -144,7 +154,7 @@ class MongoDB:
         except Exception as e:
             print(f"Error creating indexes: {e}")
             raise
-
+    
     @classmethod
     async def setup_validations(cls):
         """Set up collection validations"""
@@ -365,3 +375,4 @@ class MongoDB:
         except Exception as e:
             print(f"Error setting up collection validations: {e}")
             raise
+

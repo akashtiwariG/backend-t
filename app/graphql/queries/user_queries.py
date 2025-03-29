@@ -4,6 +4,7 @@ from bson import ObjectId
 
 from app.graphql.types.user import User, UserRole, UserPermission
 from app.db.mongodb import MongoDB
+from app.core.security import verify_password  # Import the existing password verification
 
 @strawberry.type
 class UserQueries:
@@ -16,13 +17,31 @@ class UserQueries:
         except Exception as e:
             raise ValueError(f"Error fetching user: {str(e)}")
 
-    @strawberry.field
-    async def get_user_by_email(self, email: str) -> Optional[User]:
-        """Get a single user by email"""
+    # In UserQueries class
+    @strawberry.field(name="getUserByEmail")  # Note the explicit name parameter
+    async def get_user_by_email(self, email: str, password: Optional[str] = None) -> Optional[User]:
+        """Get a single user by email with password verification"""
         try:
+            # First find the user by email
             user = await MongoDB.database.users.find_one({"email": email})
-            return User.from_db(user) if user else None
+            
+            # If no user found, return None
+            if not user:
+                print(f"No user found with email: {email}")
+                return None
+                
+            # If password is provided, verify it before returning the user
+            if password and 'hashed_password' in user:  # Note the field name needs to match DB
+                is_valid = verify_password(password, user['hashed_password'])
+                
+                if not is_valid:
+                    print(f"Invalid password for user: {email}")
+                    return None
+            
+            # If no password provided or password verified, return the user
+            return User.from_db(user)
         except Exception as e:
+            print(f"Error in getUserByEmail: {str(e)}")
             raise ValueError(f"Error fetching user by email: {str(e)}")
 
     @strawberry.field

@@ -74,7 +74,7 @@ class BookingQueries:
         Fetch bookings for a specific guest by email.
         """
         try:
-            db = await MongoDB.database
+            db = MongoDB.database
             query = {"guest.email": guest_email}
 
             bookings = await db.bookings.find(query).skip(offset).limit(limit).to_list(length=limit)

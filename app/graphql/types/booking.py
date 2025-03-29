@@ -49,7 +49,6 @@ class RoomCharge:
 
 @strawberry.type
 class GuestDetails:
-    title: Optional[str]
     first_name: str
     last_name: str
     email: str
@@ -94,12 +93,26 @@ class Booking:
 
     @classmethod
     def from_db(cls, db_data: dict):
+        """
+        Convert database representation to Booking object, handling field name mismatches.
+        """
+        # Handle potential mismatch in guest data structure
+        guest_data = db_data['guest'].copy()
+        
+        # Check if the guest data has 'name' instead of 'first_name' and 'last_name'
+        if 'name' in guest_data and 'first_name' not in guest_data:
+            # Split name into first_name and last_name
+            name_parts = guest_data.pop('name', '').split(' ', 1)
+            guest_data['first_name'] = name_parts[0] if name_parts else ''
+            guest_data['last_name'] = name_parts[1] if len(name_parts) > 1 else ''
+        
+        # Ensure all required fields are available
         return cls(
             id=str(db_data['_id']),
             hotel_id=db_data['hotel_id'],
             room_id=db_data['room_id'],
             booking_number=db_data['booking_number'],
-            guest=GuestDetails(**db_data['guest']),
+            guest=GuestDetails(**guest_data),
             booking_status=db_data['booking_status'],
             booking_source=db_data['booking_source'],
             check_in_date=db_data['check_in_date'],
@@ -127,7 +140,6 @@ class Booking:
 
 @strawberry.input
 class GuestInput:
-    title: Optional[str]
     first_name: str
     last_name: str
     email: str
