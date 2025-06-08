@@ -130,3 +130,14 @@ class RoomStatusUpdateInput:
     room_id: str
     status: RoomStatus
     notes: Optional[str] = None
+
+@strawberry.type
+class RoomInventoryType:
+    hotel_id: str
+    room_type: str
+    date: datetime
+    total_rooms: int
+    booked_rooms: int
+    locked_rooms: int
+    available_rooms: int
+    updated_at: datetime

@@ -26,7 +26,8 @@ from ..graphql.types.room import (
     RoomStatusUpdateInput,
     RoomType,
     RoomStatus,
-    BedType
+    BedType,
+    RoomInventoryType
 )
 from ..graphql.types.booking import (
     Booking,
@@ -59,7 +60,7 @@ class Query:
     
     @strawberry.field
     def booking(self) -> BookingQueries:
-        return HotelQueries()
+        return BookingQueries()
 
 
     @strawberry.field
@@ -112,6 +113,15 @@ class Query:
     ) -> List[Room]:
         return await RoomQueries().get_rooms_by_status(hotel_id, status)
     
+    @strawberry.field
+    async def get_room_inventory(
+        self,
+        hotel_id: Optional[str] = None,
+        room_type: Optional[str] = None
+    ) -> List[RoomInventoryType]:
+        return await RoomQueries().get_room_inventory(hotel_id,room_type)
+
+    
     # Booking Queries
     @strawberry.field
     async def booking(self, booking_id: str) -> Optional[Booking]:
@@ -121,7 +131,8 @@ class Query:
     async def bookings(
         self,
         hotel_id: Optional[str] = None,
-        room_id: Optional[str] = None,
+        room_type:Optional[RoomType] = None,
+        room_id: Optional[List[str]] = None,
         booking_status: Optional[BookingStatus] = None,
         payment_status: Optional[PaymentStatus] = None,
         start_date: Optional[datetime] = None,
@@ -130,7 +141,7 @@ class Query:
         offset: Optional[int] = 0
     ) -> List[Booking]:
         return await BookingQueries().get_bookings(
-            hotel_id, room_id, booking_status, payment_status,
+            hotel_id,room_type, room_id, booking_status, payment_status,
             start_date, end_date, limit, offset
         )
 
@@ -327,6 +338,10 @@ class Mutation:
     @strawberry.field
     async def create_booking(self, booking_data: BookingInput) -> Booking:
         return await BookingMutations().create_booking(booking_data)
+    
+    @strawberry.mutation
+    async def assign_rooms_to_booking(self, booking_id: str, room_ids: List[str]) -> Booking:
+        return await BookingMutations().assign_rooms_to_booking(booking_id,room_ids)
 
     @strawberry.field
     async def update_booking_status(
@@ -336,6 +351,15 @@ class Mutation:
         notes: Optional[str] = None
     ) -> Booking:
         return await BookingMutations().update_booking_status(booking_id, status, notes)
+    
+    @strawberry.field
+    async def cancel_booking(self, booking_id: str) -> bool:
+        return await BookingMutations().cancel_booking(booking_id)
+    
+    @strawberry.mutation
+    async def checkout_booking(self, booking_id: str) -> bool:
+        return await BookingMutations().checkout_booking(booking_id)
+
 
     @strawberry.field
     async def add_payment(
@@ -359,15 +383,8 @@ class Mutation:
         )
 
     @strawberry.field
-    async def extend_booking(
-        self,
-        booking_id: str,
-        new_check_out_date: datetime,
-        notes: Optional[str] = None
-    ) -> Booking:
-        return await BookingMutations().extend_booking(
-            booking_id, new_check_out_date, notes
-        )
+    async def delete_all_bookings(self) -> bool:
+        return await BookingMutations().delete_all_bookings()
 
 # Create the schema with both queries and mutations
 schema = strawberry.Schema(

@@ -1,3 +1,4 @@
+
 import strawberry
 from typing import List, Optional
 from datetime import datetime, timedelta
@@ -9,238 +10,388 @@ from app.graphql.types.booking import (
     BookingUpdateInput,
     BookingStatus,
     PaymentStatus,
-    PaymentInput
+    PaymentInput,
+    RoomTypeBookings,
+    RoomAssignmentInput,
+    BookingStatusUpdateInput
+
 )
+from app.graphql.types.room import RoomStatus
 from app.db.mongodb import MongoDB
 
 @strawberry.type
 class BookingMutations:
     @strawberry.mutation
-    async def create_booking(self, booking_data: BookingInput) ->  Booking:
-        try:
-            db = MongoDB.database
-            
-            # Validate hotel and room
-            room = await db.rooms.find_one({
-                "_id": ObjectId(booking_data.room_id),
-                "hotel_id": booking_data.hotel_id
-            })
-            if not room:
-                raise ValueError("Room not found in specified hotel")
+    async def create_booking(self, booking_data: BookingInput) -> Booking:
+      try:
+          db = MongoDB.database
+          nights = (booking_data.check_out_date - booking_data.check_in_date).days
+          total_base = 0
 
-            if room["status"] != "available":
-                raise ValueError("Room is not available for booking")
+          # 1. Validate and lock inventory for each room_type and each date
+          for rt in booking_data.room_type_bookings:
+              room_type = rt.room_type
+              number_of_rooms = rt.number_of_rooms
+  
+              for day_offset in range(nights):
+                  date = booking_data.check_in_date + timedelta(days=day_offset)
 
-            # Check room capacity
-            if booking_data.number_of_guests > room["max_occupancy"]:
-                raise ValueError(f"Room capacity exceeded. Maximum allowed: {room['max_occupancy']}")
+                  room_inventory = await db.roomInventory.find_one({
+                      "hotel_id": booking_data.hotel_id,
+                      "room_type": room_type,
+                      "date": date
+                  })
 
-            # Check for existing bookings in date range
-            existing_booking = await db.bookings.find_one({
-                "room_id": booking_data.room_id,
-                "booking_status": {"$in": ["confirmed", "checked_in"]},
-                "$or": [
-                    {
-                        "check_in_date": {
-                            "$lt": booking_data.check_out_date,
-                            "$gte": booking_data.check_in_date
-                        }
-                    },
-                    {
-                        "check_out_date": {
-                            "$gt": booking_data.check_in_date,
-                            "$lte": booking_data.check_out_date
-                        }
-                    }
-                ]
-            })
-            if existing_booking:
-                raise ValueError("Room is already booked for these dates")
+                  if not room_inventory:
+                      raise ValueError(f"Inventory not configured for {room_type} on {date.strftime('%Y-%m-%d')}")
+  
+                  if room_inventory["available_rooms"] < number_of_rooms:
+                      raise ValueError(f"Not enough rooms available for {room_type} on {date.strftime('%Y-%m-%d')}")
+  
+                  result = await db.roomInventory.update_one({
+                      "hotel_id": booking_data.hotel_id,
+                      "room_type": room_type,
+                      "date": date,
+                      "available_rooms": {"$gte": number_of_rooms}
+                  }, {
+                      "$inc": {
+                          "available_rooms": -number_of_rooms,
+                          "locked_rooms": number_of_rooms
+                      },
+                      "$set": {"updated_at": datetime.utcnow()}
+                  })
+ 
+                  if result.modified_count == 0:
+                      raise ValueError(f"Failed to lock {room_type} rooms on {date.strftime('%Y-%m-%d')}")
 
-            # Calculate total amount
-            nights = (booking_data.check_out_date - booking_data.check_in_date).days
-            base_amount = room["price_per_night"] * nights
-            tax_amount = base_amount * 0.1  # 10% tax
-            total_amount = base_amount + tax_amount
+              # Get pricing
+              room_type_price = await db.rooms.find_one({
+                  "hotel_id": booking_data.hotel_id,
+                  "room_type": room_type
+              })
+ 
+              if not room_type_price:
+                  raise ValueError(f"Pricing not configured for room type {room_type}")
 
-            # Create booking number (you might want to use a more sophisticated method)
-            booking_number = f"BK{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+              price_per_night = room_type_price["price_per_night"]
+              base_amount = price_per_night * nights * number_of_rooms
+              total_base += base_amount
 
-            # Create guest dictionary based on GuestInput fields
-            # Use the correct field names based on your GuestInput definition
-            guest_dict = {
-                "first_name": booking_data.guest.first_name,
-                "last_name": booking_data.guest.last_name,
-                "email": booking_data.guest.email,
-                "phone": booking_data.guest.phone
-            }
-            
-            # Add name field for database validation
-            guest_dict["name"] = f"{booking_data.guest.first_name} {booking_data.guest.last_name}"
-            
-            # Add address if it exists
-            if hasattr(booking_data.guest, 'address') and booking_data.guest.address:
-                guest_dict["address"] = booking_data.guest.address
+          # 2. Calculate total
+          tax_amount = total_base * 0.1
+          total_amount = total_base + tax_amount
+          booking_number = f"BK{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
 
-            booking_dict = {
-                "hotel_id": booking_data.hotel_id,
-                "room_id": booking_data.room_id,
-                "booking_number": booking_number,
-                "guest": guest_dict,
-                "booking_source": booking_data.booking_source,
-                "check_in_date": booking_data.check_in_date,
-                "check_out_date": booking_data.check_out_date,
-                "number_of_guests": booking_data.number_of_guests,
-                "number_of_rooms": booking_data.number_of_rooms,
-                "room_type": room["room_type"],
-                "rate_plan": booking_data.rate_plan,
-                "base_amount": base_amount,
-                "tax_amount": tax_amount,
-                "total_amount": total_amount,
-                "booking_status": BookingStatus.CONFIRMED.value,
-                "payment_status": PaymentStatus.PENDING.value,
-                "special_requests": booking_data.special_requests,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
-                "created_by": "system",  # Should be replaced with actual user
-                "updated_by": "system"
-            }
+          # 3. Construct guest info
+          guest_dict = {
+              "first_name": booking_data.guest.first_name,
+              "last_name": booking_data.guest.last_name,
+              "email": booking_data.guest.email,
+              "phone": booking_data.guest.phone,
+              "city": getattr(booking_data.guest, "city", None),
+              "country": getattr(booking_data.guest, "country", None),
+              "id_type": getattr(booking_data.guest, "id_type", None),
+              "id_number": getattr(booking_data.guest, "id_number", None),
+              "special_requests": getattr(booking_data.guest, "special_requests", None),
+              "address": getattr(booking_data.guest, "address", None)
+          }
 
-            result = await db.bookings.insert_one(booking_dict)
-            booking_dict["id"] = str(result.inserted_id)
+          # 4. Create booking
+          booking_dict = {
+              "hotel_id": booking_data.hotel_id,
+              "room_type_bookings": [
+                  {
+                    "room_type": rt.room_type.value if hasattr(rt.room_type, "value") else rt.room_type,
+                    "number_of_rooms": rt.number_of_rooms,
+                    "room_ids": rt.room_ids or []
+                  }
+                  for rt in booking_data.room_type_bookings
+              ],
+              "booking_number": booking_number,
+              "guest": guest_dict,
+              "booking_status": BookingStatus.CONFIRMED.value,
+              "payment_status": PaymentStatus.PENDING.value,
+              "booking_source": booking_data.booking_source,
+              "check_in_date": booking_data.check_in_date,
+              "check_out_date": booking_data.check_out_date,
+              "number_of_guests": booking_data.number_of_guests,
+              "rate_plan": booking_data.rate_plan,
+              "tax_amount": tax_amount,
+              "base_amount": total_base,
+              "total_amount": total_amount,
+              "created_at": datetime.utcnow(),
+              "updated_at": datetime.utcnow(),
+              "payments": [],
+              "room_charges": [],
+              "special_requests": booking_data.special_requests,
+              "created_by": "system",
+              "updated_by": "system"
+          }
 
-            # Update room status
-            await db.rooms.update_one(
-                {"_id": ObjectId(booking_data.room_id)},
-                {
-                    "$set": {
-                        "status": "OCCUPIED",
-                        "updated_at": datetime.utcnow()
-                    }
-                }
-            )
+          result = await db.bookings.insert_one(booking_dict)
+          booking_dict["id"] = str(result.inserted_id)
 
-            return Booking.from_db(booking_dict)
+          return Booking.from_db(booking_dict)
 
-        except Exception as e:
-            raise ValueError(f"Error creating booking: {str(e)}")
+      except Exception as e:
+          raise ValueError(f"Error creating booking: {str(e)}")
 
-    # Helper method to find booking by ID or booking number
-    async def _find_booking(self, db, booking_id: str):
-        """
-        Find a booking by either ObjectId or booking number
-        """
-        booking = None
-        if len(booking_id) == 24 and all(c in '0123456789abcdefABCDEF' for c in booking_id):
-            # It's likely an ObjectId
-            booking = await db.bookings.find_one({"_id": ObjectId(booking_id)})
-        else:
-            # It's likely a booking number
-            booking = await db.bookings.find_one({"booking_number": booking_id})
-        
-        return booking
+
+    
 
     @strawberry.mutation
-    async def update_booking_status(
-        self,
-        booking_id: str,
-        status: BookingStatus,
-        notes: Optional[str] = None
-    ) ->  Booking:
-        try:
-            db = MongoDB.database
-            
-            # Find booking by ID or booking number
-            booking = await self._find_booking(db, booking_id)
-            if not booking:
-                raise ValueError("Booking not found")
+    async def assign_rooms_to_booking(self, booking_id: str, assignments: List[RoomAssignmentInput]) -> Booking:
+      try:
+          db = MongoDB.database
 
-            update_dict = {
-                "booking_status": status.value,
-                "updated_at": datetime.utcnow(),
-                "updated_by": "system"  # Should be replaced with actual user
-            }
+          # Step 0: Fetch booking
+          booking = await db.bookings.find_one({"_id": ObjectId(booking_id)})
+          if not booking:
+              raise ValueError("Booking not found")
 
-            if notes:
-                update_dict["status_notes"] = notes
+          if booking["booking_status"] != BookingStatus.CONFIRMED.value:
+              raise ValueError("Rooms can only be assigned to confirmed bookings")
 
-            # Handle status-specific actions
-            if status == BookingStatus.CHECKED_IN:
-                if booking["booking_status"] != BookingStatus.CONFIRMED.value:
-                    raise ValueError("Only confirmed bookings can be checked in")
-                
-                update_dict["check_in_time"] = datetime.utcnow()
-                
-                # Update room status
-                await db.rooms.update_one(
-                    {"_id": ObjectId(booking["room_id"])},
-                    {
-                        "$set": {
-                            "status": "occupied",
-                            "updated_at": datetime.utcnow()
-                        }
-                    }
-                )
+          hotel_id = booking["hotel_id"]
+          check_in_date = booking["check_in_date"]
+          check_out_date = booking["check_out_date"]
+          nights = (check_out_date - check_in_date).days
 
-            elif status == BookingStatus.CHECKED_OUT:
-                if booking["booking_status"] != BookingStatus.CHECKED_IN.value:
-                    raise ValueError("Only checked-in bookings can be checked out")
-                
-                update_dict["check_out_time"] = datetime.utcnow()
-                
-                # Update room status and create cleaning task
-                await db.rooms.update_one(
-                    {"_id": ObjectId(booking["room_id"])},
-                    {
-                        "$set": {
-                            "status": "cleaning",
-                            "updated_at": datetime.utcnow()
-                        }
-                    }
-                )
+          all_room_ids: List[ObjectId] = []
 
-                # Create housekeeping task
-                housekeeping_task = {
-                    "hotel_id": booking["hotel_id"],
-                    "room_id": booking["room_id"],
-                    "task_type": "cleaning",
-                    "priority": "high",
-                    "status": "pending",
-                    "scheduled_date": datetime.utcnow(),
-                    "created_at": datetime.utcnow(),
-                    "updated_at": datetime.utcnow()
-                }
-                await db.housekeeping_tasks.insert_one(housekeeping_task)
+          for assignment in assignments:
+              room_type = assignment.room_type
+              room_ids = assignment.room_ids
 
-            elif status == BookingStatus.CANCELLED:
-                if booking["booking_status"] in [BookingStatus.CHECKED_IN.value, BookingStatus.CHECKED_OUT.value]:
-                    raise ValueError("Cannot cancel checked-in or checked-out bookings")
-                
-                update_dict["cancellation_date"] = datetime.utcnow()
-                update_dict["cancellation_reason"] = notes
-                
-                # Update room status
-                await db.rooms.update_one(
-                    {"_id": ObjectId(booking["room_id"])},
-                    {
-                        "$set": {
-                            "status": "available",
-                            "updated_at": datetime.utcnow()
-                        }
-                    }
-                )
+              # Validate room count
+              summary = next((s for s in booking["room_type_summary"] if s["room_type"] == room_type), None)
+              if not summary or len(room_ids) != summary["number_of_rooms"]:
+                  raise ValueError(f"{room_type}: Expected {summary['number_of_rooms']} rooms, got {len(room_ids)}")
+  
+              # Validate room existence & availability
+              rooms_cursor = db.rooms.find({
+                  "_id": {"$in": [ObjectId(rid) for rid in room_ids]},
+                  "hotel_id": hotel_id,
+                  "room_type": room_type,
+                  "status": "available"
+              })
 
-            await db.bookings.update_one(
-                {"_id": booking["_id"]},
-                {"$set": update_dict}
-            )
+              valid_rooms = await rooms_cursor.to_list(length=len(room_ids) + 1)
+              if len(valid_rooms) != len(room_ids):
+                  raise ValueError(f"Invalid or unavailable rooms for type {room_type}")
 
-            updated_booking = await db.bookings.find_one({"_id": booking["_id"]})
-            return Booking.from_db(updated_booking)
+              all_room_ids.extend([room["_id"] for room in valid_rooms])
 
-        except Exception as e:
-            raise ValueError(f"Error updating booking status: {str(e)}")
+              # Step 1: For each date, move locked_rooms → booked_rooms
+              for day_offset in range(nights):
+                  date = check_in_date + timedelta(days=day_offset)
+ 
+                  inv_result = await db.roomInventory.update_one({
+                      "hotel_id": hotel_id,
+                      "room_type": room_type,
+                      "date": date,
+                      "locked_rooms": {"$gte": len(room_ids)}
+                  }, {
+                      "$inc": {
+                          "locked_rooms": -len(room_ids),
+                          "booked_rooms": len(room_ids)
+                      },
+                      "$set": {"updated_at": datetime.utcnow()}
+                  })
 
+                  if inv_result.modified_count == 0:
+                      raise ValueError(f"Inventory update failed for {room_type} on {date.strftime('%Y-%m-%d')} — possible race condition")
+
+          # Step 2: Mark rooms as occupied
+          await db.rooms.update_many(
+              {"_id": {"$in": all_room_ids}},
+              {
+                  "$set": {
+                      "status": "occupied",
+                      "updated_at": datetime.utcnow()
+                  }
+              }
+          )
+
+          # Step 3: Update booking status and room assignments
+          await db.bookings.update_one(
+              {"_id": ObjectId(booking_id)},
+              {
+                  "$set": {
+                     "room_ids": [str(rid) for rid in all_room_ids],
+                     "booking_status": BookingStatus.CHECKED_IN.value,
+                     "check_in_time": datetime.utcnow(),
+                     "updated_at": datetime.utcnow()
+                  }
+              }
+          )
+
+          updated_booking = await db.bookings.find_one({"_id": ObjectId(booking_id)})
+          updated_booking["id"] = str(updated_booking["_id"])
+          return Booking.from_db(updated_booking)
+
+      except Exception as e:
+          raise ValueError(f"Error assigning rooms to booking: {str(e)}")
+
+
+
+    @strawberry.mutation
+    async def cancel_booking(self, booking_id: str) -> bool:
+       try:
+          db = MongoDB.database
+          booking = await db.bookings.find_one({"_id": ObjectId(booking_id)})
+          if not booking:
+              raise ValueError("Booking not found")
+
+          if booking["booking_status"] not in [BookingStatus.CONFIRMED.value, BookingStatus.CHECKED_IN.value]:
+              raise ValueError("Only confirmed or checked-in bookings can be cancelled")
+
+          check_in_date = booking["check_in_date"]
+          check_out_date = booking["check_out_date"]
+          room_type_bookings = booking["room_type_bookings"]
+          assigned_room_ids = booking.get("room_ids", [])
+
+          for offset in range((check_out_date - check_in_date).days):
+              current_date = check_in_date + timedelta(days=offset)
+              for rt in room_type_bookings:
+                  update_query = {
+                      "hotel_id": booking["hotel_id"],
+                      "room_type": rt["room_type"],
+                      "date": current_date
+                  }
+                  if booking["booking_status"] == BookingStatus.CONFIRMED.value:
+                      update_ops = {
+                          "$inc": {"locked_rooms": -rt["number_of_rooms"], "available_rooms": rt["number_of_rooms"]}
+                      }
+                  else:
+                      update_ops = {
+                          "$inc": {"booked_rooms": -rt["number_of_rooms"], "available_rooms": rt["number_of_rooms"]}
+                      }
+
+                  await db.roomInventory.update_one(update_query, update_ops)
+
+          if assigned_room_ids:
+              await db.rooms.update_many(
+                  {"_id": {"$in": [ObjectId(rid) for rid in assigned_room_ids]}},
+                  {"$set": {"status": RoomStatus.AVAILABLE.value, "updated_at": datetime.utcnow()}}
+              )
+
+          await db.bookings.update_one(
+              {"_id": ObjectId(booking_id)},
+              {
+                  "$set": {
+                      "booking_status": BookingStatus.CANCELLED.value,
+                      "updated_at": datetime.utcnow()
+                  }
+              }
+          )
+ 
+          return True
+
+       except Exception as e:
+           raise ValueError(f"Error cancelling booking: {e}")
+
+      
+
+    @strawberry.mutation
+    async def checkout_booking(self, booking_id: str) -> bool:
+      try:
+          db = MongoDB.database
+          booking = await db.bookings.find_one({"_id": ObjectId(booking_id)})
+          if not booking:
+              raise ValueError("Booking not found")
+
+          if booking["booking_status"] != BookingStatus.CHECKED_IN.value:
+              raise ValueError("Only checked-in bookings can be checked out")
+
+          room_ids = booking.get("room_ids", [])
+          if room_ids:
+              await db.rooms.update_many(
+                  {"_id": {"$in": [ObjectId(rid) for rid in room_ids]}},
+                  {"$set": {"status": RoomStatus.AVAILABLE.value, "updated_at": datetime.utcnow()}}
+              )
+
+          await db.bookings.update_one(
+              {"_id": ObjectId(booking_id)},
+              {
+                  "$set": {
+                      "booking_status": BookingStatus.CHECKED_OUT.value,
+                      "check_out_time": datetime.utcnow(),
+                      "updated_at": datetime.utcnow()
+                  }
+              }
+          )
+
+          return True
+
+      except Exception as e:
+          raise ValueError(f"Error during checkout: {e}")
+
+
+
+    '''@strawberry.mutation
+    async def update_booking_status(self, booking_id: str, new_status: BookingStatusUpdateInput) -> Booking:
+       try:
+          db = MongoDB.database
+          session = await db.client.start_session()
+          async with session.start_transaction():
+              booking = await db.bookings.find_one({"_id": ObjectId(booking_id)}, session=session)
+              if not booking:
+                  raise ValueError("Booking not found")
+
+              if booking["booking_status"] == new_status:
+                  return Booking.from_db(booking)
+
+              if new_status == BookingStatus.CANCELLED.value & booking["booking_status"] == "confirmed":
+                  # Rollback room inventory for all room types
+                  for summary in booking["room_type_summary"]:
+                      await db.roomInventory.update_one({
+                          "hotel_id": booking["hotel_id"],
+                          "room_type": summary["room_type"],
+                          "date": booking["check_in_date"]
+                      }, {
+                          "$inc": {
+                              "available_rooms": summary["number_of_rooms"],
+                              "locked_rooms": -summary["number_of_rooms"]
+                          },
+                         "$set": {"updated_at": datetime.utcnow()}
+                        }, session=session)
+
+              
+              elif new_status == BookingStatus.CHECKED_OUT.value & booking["booking_status"] == "checked_in":
+                  # Finalize locked rooms to booked for all types
+                  for summary in booking["room_type_summary"]:
+                      await db.roomInventory.update_one({
+                          "hotel_id": booking["hotel_id"],
+                          "room_type": summary["room_type"],
+                          "date": booking["check_in_date"]
+                      }, {
+                          "$inc": {
+                              "booked_rooms": -summary["number_of_rooms"],
+                              "available_rooms": summary["number_of_rooms"]
+                          },
+                          "$set": {"updated_at": datetime.utcnow()}
+                        }, session=session)
+
+              # Update booking status
+              await db.bookings.update_one(
+                   {"_id": ObjectId(booking_id)},
+                   {
+                       "$set": {
+                           "booking_status": new_status,
+                           "updated_at": datetime.utcnow()
+                       }
+                   }, session=session
+               )
+
+              return Booking.from_db({**booking, "booking_status": new_status})
+
+       except Exception as e:
+          raise ValueError(f"Error updating status: {str(e)}")'''
+
+
+
+  
     @strawberry.mutation
     async def add_payment(
         self,
@@ -340,65 +491,20 @@ class BookingMutations:
         except Exception as e:
             raise ValueError(f"Error adding room charge: {str(e)}")
 
+    
+        
     @strawberry.mutation
-    async def extend_booking(
-        self,
-        booking_id: str,
-        new_check_out_date: datetime,
-        notes: Optional[str] = None
-    ) ->  Booking:
+    async def delete_all_bookings(self) -> str:
         try:
             db = MongoDB.database
-            
-            # Find booking by ID or booking number
-            booking = await self._find_booking(db, booking_id)
-            if not booking:
-                raise ValueError("Booking not found")
 
-            if booking["booking_status"] not in [BookingStatus.CONFIRMED.value, BookingStatus.CHECKED_IN.value]:
-                raise ValueError("Can only extend confirmed or checked-in bookings")
+        # Perform the deletion
+            result = await db.bookings.delete_many({})
 
-            if new_check_out_date <= booking["check_out_date"]:
-                raise ValueError("New check-out date must be after current check-out date")
-
-            # Check room availability for extension period
-            conflicting_booking = await db.bookings.find_one({
-                "room_id": booking["room_id"],
-                "_id": {"$ne": booking["_id"]},
-                "booking_status": {"$in": ["confirmed", "checked_in"]},
-                "check_in_date": {"$lt": new_check_out_date},
-                "check_out_date": {"$gt": booking["check_out_date"]}
-            })
-            if conflicting_booking:
-                raise ValueError("Room is not available for the requested extension period")
-
-            # Calculate additional charges
-            room = await db.rooms.find_one({"_id": ObjectId(booking["room_id"])})
-            additional_nights = (new_check_out_date - booking["check_out_date"]).days
-            additional_amount = room["price_per_night"] * additional_nights
-            additional_tax = additional_amount * 0.1  # 10% tax
-            total_additional = additional_amount + additional_tax
-
-            # Update booking
-            update_dict = {
-                "check_out_date": new_check_out_date,
-                "base_amount": booking["base_amount"] + additional_amount,
-                "tax_amount": booking["tax_amount"] + additional_tax,
-                "total_amount": booking["total_amount"] + total_additional,
-                "updated_at": datetime.utcnow(),
-                "updated_by": "system"
-            }
-
-            if notes:
-                update_dict["extension_notes"] = notes
-
-            await db.bookings.update_one(
-                {"_id": booking["_id"]},
-                {"$set": update_dict}
-            )
-
-            updated_booking = await db.bookings.find_one({"_id": booking["_id"]})
-            return Booking.from_db(updated_booking)
-
+            return f"Deleted {result.deleted_count} booking(s) from the database."
+    
         except Exception as e:
-            raise ValueError(f"Error extending booking: {str(e)}")
+            raise ValueError(f"Error deleting bookings: {str(e)}")
+
+        
+    

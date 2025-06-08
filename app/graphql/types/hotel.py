@@ -3,7 +3,6 @@ from typing import List, Optional
 from datetime import datetime
 from enum import Enum
 from dataclasses import dataclass, field
-
 @strawberry.enum
 class HotelStatus(str, Enum):
     ACTIVE = "active"
@@ -19,7 +18,6 @@ class HotelAmenity:
     description: Optional[str] = None
     icon: Optional[str] = None
 
-# In app/graphql/types/hotel.py
 @strawberry.type
 class HotelPolicy:
     check_in_time: str
@@ -62,34 +60,33 @@ class HotelPolicyInput:
 class Hotel:
     id: str
     name: str
-    description: Optional[str] = None
     address: str
     city: str
     state: str
     country: str
     zipcode: str
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
     contact_phone: str
     contact_email: str
-    website: Optional[str] = None
     admin_id: str
     status: HotelStatus
-    amenities: List[str] = field(default_factory=list)
-    room_count: int = 0
     floor_count: int
-    star_rating: Optional[int] = None
     policies: HotelPolicy
-    images: List[str] = field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+    description: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    website: Optional[str] = None
+    amenities: List[str] = field(default_factory=list)
+    room_count: int = 0
+    star_rating: Optional[int] = None
+    images: List[str] = field(default_factory=list)
 
     @classmethod
     def from_db(cls, db_data: dict):
         if not db_data:
             return None
-            
-        # Create HotelPolicy instance with proper defaults
+
         policies_data = db_data.get('policies', {})
         policies = HotelPolicy(
             check_in_time=policies_data.get('check_in_time', '14:00'),
@@ -103,27 +100,27 @@ class Hotel:
         return cls(
             id=str(db_data['_id']),
             name=db_data['name'],
-            description=db_data.get('description'),
             address=db_data['address'],
             city=db_data['city'],
             state=db_data['state'],
             country=db_data['country'],
             zipcode=db_data['zipcode'],
-            latitude=db_data.get('latitude'),
-            longitude=db_data.get('longitude'),
             contact_phone=db_data['contact_phone'],
             contact_email=db_data['contact_email'],
-            website=db_data.get('website'),
             admin_id=db_data['admin_id'],
             status=HotelStatus(db_data['status']),
+            floor_count=db_data['floor_count'],
+            policies=policies,
+            created_at=db_data['created_at'],
+            updated_at=db_data['updated_at'],
+            description=db_data.get('description'),
+            latitude=db_data.get('latitude'),
+            longitude=db_data.get('longitude'),
+            website=db_data.get('website'),
             amenities=db_data.get('amenities', []),
             room_count=db_data.get('room_count', 0),
-            floor_count=db_data['floor_count'],
             star_rating=db_data.get('star_rating'),
-            policies=policies,
-            images=db_data.get('images', []),
-            created_at=db_data['created_at'],
-            updated_at=db_data['updated_at']
+            images=db_data.get('images', [])
         )
 
     def validate_coordinates(self) -> bool:
@@ -136,27 +133,25 @@ class Hotel:
     def validate_star_rating(self) -> bool:
         return self.star_rating is None or (1 <= self.star_rating <= 5)
 
-
-
 @strawberry.input
 @dataclass
 class HotelInput:
     name: str
-    description: Optional[str] = None
     address: str
     city: str
     state: str
     country: str
     zipcode: str
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
     contact_phone: str
     contact_email: str
-    website: Optional[str] = None
     admin_id: str
     floor_count: int
-    star_rating: Optional[int] = None
+    description: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    website: Optional[str] = None
     amenities: List[str] = field(default_factory=list)
+    star_rating: Optional[int] = None
     policies: Optional[HotelPolicyInput] = None
 
 @strawberry.input
@@ -202,7 +197,6 @@ class HotelDeleteResponse:
     success: bool
     message: str
     hotel_id: str
-
 
 @strawberry.input
 class HotelSearchInput:

@@ -8,7 +8,8 @@ from app.graphql.types.room import (
     Room,
     RoomType,
     RoomStatus,
-    BedType
+    BedType,
+    RoomInventoryType
 )
 from app.db.mongodb import MongoDB
 
@@ -150,3 +151,34 @@ class RoomQueries:
             return [Room.from_db(room) for room in rooms]
         except Exception as e:
             raise ValueError(f"Error fetching rooms by status: {str(e)}")
+        
+    @strawberry.field
+    async def get_room_inventory(
+        self,
+        hotel_id: Optional[str] = None,
+        room_type: Optional[str] = None,
+    ) -> List[RoomInventoryType]:
+        db = MongoDB.database
+
+        query = {}
+        if hotel_id:
+            query["hotel_id"] = hotel_id
+        if room_type:
+            query["room_type"] = room_type.lower()
+
+        cursor = db.roomInventory.find(query)
+        results = []
+
+        async for doc in cursor:
+            results.append(RoomInventoryType(
+                hotel_id=doc["hotel_id"],
+                room_type=doc["room_type"],
+                date=doc["date"],
+                total_rooms=doc["total_rooms"],
+                booked_rooms=doc["booked_rooms"],
+                locked_rooms=doc["locked_rooms"],
+                available_rooms=doc["available_rooms"],
+                updated_at=doc["updated_at"],
+            ))
+
+        return results
