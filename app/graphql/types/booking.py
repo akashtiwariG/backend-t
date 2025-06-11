@@ -7,14 +7,10 @@ from app.graphql.types.room import RoomType
 # ENUMS
 
 @strawberry.input
-class RoomAssignmentInput:
-    room_type: str
-    room_ids: List[str]
-
-@strawberry.input
-class AssignRoomsInput:
-    booking_id: str
-    assignments: List[RoomAssignmentInput]
+class singleRoomAssignmentInput:
+      booking_id: str
+      room_type: RoomType
+      room_id: str
 
 @strawberry.enum
 class BookingStatus(str, Enum):

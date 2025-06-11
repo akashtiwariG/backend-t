@@ -14,16 +14,14 @@ from ..graphql.types.hotel import (
     HotelInput, 
     HotelUpdateInput, 
     HotelPolicyInput,
-    HotelResponse,
-    HotelDeleteResponse,
-    PaginatedHotelResponse
+    
 )
 from ..graphql.types.maintenance import MaintenanceCategory, MaintenanceType, PartDetailInput, MaintenanceStatus
 from ..graphql.types.room import (
     Room,
     RoomInput,
     RoomUpdateInput,
-    RoomStatusUpdateInput,
+   
     RoomType,
     RoomStatus,
     BedType,
@@ -32,7 +30,7 @@ from ..graphql.types.room import (
 from ..graphql.types.booking import (
     Booking,
     BookingInput,
-    BookingUpdateInput,
+
     BookingStatus,
     PaymentStatus,
     PaymentInput
@@ -340,8 +338,8 @@ class Mutation:
         return await BookingMutations().create_booking(booking_data)
     
     @strawberry.mutation
-    async def assign_rooms_to_booking(self, booking_id: str, room_ids: List[str]) -> Booking:
-        return await BookingMutations().assign_rooms_to_booking(booking_id,room_ids)
+    async def assign_single_room_to_booking(self,booking_id: str,room_type: RoomType,room_id: str) -> Booking:
+        return await BookingMutations().assign_single_room_to_booking(booking_id,room_type,room_id)
 
     @strawberry.field
     async def update_booking_status(
@@ -356,6 +354,10 @@ class Mutation:
     async def cancel_booking(self, booking_id: str) -> bool:
         return await BookingMutations().cancel_booking(booking_id)
     
+    @strawberry.mutation
+    async def check_in_booking(self, booking_id: str) -> Booking:
+        return await BookingMutations().check_in_booking(booking_id)
+
     @strawberry.mutation
     async def checkout_booking(self, booking_id: str) -> bool:
         return await BookingMutations().checkout_booking(booking_id)

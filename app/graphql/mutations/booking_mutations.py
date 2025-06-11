@@ -11,12 +11,8 @@ from app.graphql.types.booking import (
     BookingStatus,
     PaymentStatus,
     PaymentInput,
-    RoomTypeBookings,
-    RoomAssignmentInput,
-    BookingStatusUpdateInput
-
 )
-from app.graphql.types.room import RoomStatus
+from app.graphql.types.room import (RoomStatus,RoomType)
 from app.db.mongodb import MongoDB
 
 @strawberry.type
@@ -140,7 +136,12 @@ class BookingMutations:
     
 
     @strawberry.mutation
-    async def assign_rooms_to_booking(self, booking_id: str, assignments: List[RoomAssignmentInput]) -> Booking:
+    async def assign_single_room_to_booking(
+      self,
+      booking_id: str,
+      room_type: RoomType,
+      room_id: str
+    ) -> Booking:
       try:
           db = MongoDB.database
 
@@ -157,54 +158,58 @@ class BookingMutations:
           check_out_date = booking["check_out_date"]
           nights = (check_out_date - check_in_date).days
 
-          all_room_ids: List[ObjectId] = []
+          # Step 1: Validate roomType in booking summary
+          summary = next((s for s in booking["room_type_bookings"] if s["room_type"] == room_type), None)
+          if not summary:
+              raise ValueError(f"Room type {room_type} not found in booking")
 
-          for assignment in assignments:
-              room_type = assignment.room_type
-              room_ids = assignment.room_ids
+          if "room_ids" not in summary or summary["room_ids"] is None:
+              summary["room_ids"] = []
+ 
+          if room_id in summary["room_ids"]:
+             # Already assigned
+             updated_booking = await db.bookings.find_one({"_id": ObjectId(booking_id)})
+             updated_booking["id"] = str(updated_booking["_id"])
+             return Booking.from_db(updated_booking)
 
-              # Validate room count
-              summary = next((s for s in booking["room_type_summary"] if s["room_type"] == room_type), None)
-              if not summary or len(room_ids) != summary["number_of_rooms"]:
-                  raise ValueError(f"{room_type}: Expected {summary['number_of_rooms']} rooms, got {len(room_ids)}")
-  
-              # Validate room existence & availability
-              rooms_cursor = db.rooms.find({
-                  "_id": {"$in": [ObjectId(rid) for rid in room_ids]},
+          if len(summary["room_ids"]) >= summary["number_of_rooms"]: 
+             raise ValueError(f"All rooms already assigned for type {room_type}")
+
+
+          # Step 2: Validate Room existence and availability
+          room_obj = await db.rooms.find_one({
+              "_id": ObjectId(room_id),
+              "hotel_id": hotel_id,
+              "room_type": room_type,
+              "status": "available"
+          })
+
+          if not room_obj:
+              raise ValueError("Room not available or does not exist")
+
+          # Step 3: Update roomInventory for each date
+          for day_offset in range(nights):
+              date = check_in_date + timedelta(days=day_offset)
+
+              inv_result = await db.roomInventory.update_one({
                   "hotel_id": hotel_id,
                   "room_type": room_type,
-                  "status": "available"
+                  "date": date,
+                  "locked_rooms": {"$gte": 1}
+              }, {
+                  "$inc": {
+                      "locked_rooms": -1,
+                      "booked_rooms": 1
+                  },
+                  "$set": {"updated_at": datetime.utcnow()}
               })
 
-              valid_rooms = await rooms_cursor.to_list(length=len(room_ids) + 1)
-              if len(valid_rooms) != len(room_ids):
-                  raise ValueError(f"Invalid or unavailable rooms for type {room_type}")
+              if inv_result.modified_count == 0:
+                  raise ValueError(f"Inventory update failed for {room_type} on {date.strftime('%Y-%m-%d')}")
 
-              all_room_ids.extend([room["_id"] for room in valid_rooms])
-
-              # Step 1: For each date, move locked_rooms → booked_rooms
-              for day_offset in range(nights):
-                  date = check_in_date + timedelta(days=day_offset)
- 
-                  inv_result = await db.roomInventory.update_one({
-                      "hotel_id": hotel_id,
-                      "room_type": room_type,
-                      "date": date,
-                      "locked_rooms": {"$gte": len(room_ids)}
-                  }, {
-                      "$inc": {
-                          "locked_rooms": -len(room_ids),
-                          "booked_rooms": len(room_ids)
-                      },
-                      "$set": {"updated_at": datetime.utcnow()}
-                  })
-
-                  if inv_result.modified_count == 0:
-                      raise ValueError(f"Inventory update failed for {room_type} on {date.strftime('%Y-%m-%d')} — possible race condition")
-
-          # Step 2: Mark rooms as occupied
-          await db.rooms.update_many(
-              {"_id": {"$in": all_room_ids}},
+          # Step 4: Update room status to 'assigned'
+          await db.rooms.update_one(
+              {"_id": ObjectId(room_id)},
               {
                   "$set": {
                       "status": "occupied",
@@ -213,16 +218,15 @@ class BookingMutations:
               }
           )
 
-          # Step 3: Update booking status and room assignments
+          # Step 5: Push room_id into roomTypeBookings.room_ids array
           await db.bookings.update_one(
-              {"_id": ObjectId(booking_id)},
               {
-                  "$set": {
-                     "room_ids": [str(rid) for rid in all_room_ids],
-                     "booking_status": BookingStatus.CHECKED_IN.value,
-                     "check_in_time": datetime.utcnow(),
-                     "updated_at": datetime.utcnow()
-                  }
+                  "_id": ObjectId(booking_id),
+                  "room_type_bookings.room_type": room_type
+              },
+              {
+                  "$push": {"room_type_bookings.$.room_ids": room_id},
+                  "$set": {"updated_at": datetime.utcnow()}
               }
           )
 
@@ -231,7 +235,8 @@ class BookingMutations:
           return Booking.from_db(updated_booking)
 
       except Exception as e:
-          raise ValueError(f"Error assigning rooms to booking: {str(e)}")
+          raise ValueError(f"Error assigning room: {str(e)}")
+
 
 
 
@@ -292,6 +297,48 @@ class BookingMutations:
            raise ValueError(f"Error cancelling booking: {e}")
 
       
+    @strawberry.mutation
+    async def check_in_booking(self, booking_id: str) -> Booking:
+       try:
+           db = MongoDB.database
+
+           # Step 1: Fetch the booking
+           booking = await db.bookings.find_one({"_id": ObjectId(booking_id)})
+           if not booking:
+               raise ValueError("Booking not found")
+
+           # Step 2: Check booking status
+           if booking["booking_status"] != BookingStatus.CONFIRMED.value:
+               raise ValueError("Only confirmed bookings can be checked in")
+
+           # Step 3: Validate each roomTypeBooking
+           for rtb in booking.get("roomTypeBookings", []):
+               room_type = rtb["roomType"]
+               expected = rtb["numberOfRooms"]
+               actual = len(rtb.get("roomIds", []))
+
+               if actual != expected:
+                   raise ValueError(f"Room type {room_type}: Expected {expected} rooms, found {actual} assigned")
+
+           # Step 4: Update booking status to CHECKED_IN
+           await db.bookings.update_one(
+               {"_id": ObjectId(booking_id)},
+               {
+                   "$set": {
+                       "booking_status": BookingStatus.CHECKED_IN.value,
+                       "check_in_time": datetime.utcnow(),
+                       "updated_at": datetime.utcnow()
+                    }
+               }
+           )
+
+           updated_booking = await db.bookings.find_one({"_id": ObjectId(booking_id)})
+           updated_booking["id"] = str(updated_booking["_id"])
+           return Booking.from_db(updated_booking)
+
+       except Exception as e:
+           raise ValueError(f"Error during check-in: {str(e)}")
+
 
     @strawberry.mutation
     async def checkout_booking(self, booking_id: str) -> bool:
@@ -507,4 +554,96 @@ class BookingMutations:
             raise ValueError(f"Error deleting bookings: {str(e)}")
 
         
-    
+    '''@strawberry.mutation
+    async def assign_rooms_to_booking(self, booking_id: str, assignments: List[RoomAssignmentInput]) -> Booking:
+      try:
+          db = MongoDB.database
+
+          # Step 0: Fetch booking
+          booking = await db.bookings.find_one({"_id": ObjectId(booking_id)})
+          if not booking:
+              raise ValueError("Booking not found")
+
+          if booking["booking_status"] != BookingStatus.CONFIRMED.value:
+              raise ValueError("Rooms can only be assigned to confirmed bookings")
+
+          hotel_id = booking["hotel_id"]
+          check_in_date = booking["check_in_date"]
+          check_out_date = booking["check_out_date"]
+          nights = (check_out_date - check_in_date).days
+
+          all_room_ids: List[ObjectId] = []
+
+          for assignment in assignments:
+              room_type = assignment.room_type
+              room_ids = assignment.room_ids
+
+              # Validate room count
+              summary = next((s for s in booking["room_type_summary"] if s["room_type"] == room_type), None)
+              if not summary or len(room_ids) != summary["number_of_rooms"]:
+                  raise ValueError(f"{room_type}: Expected {summary['number_of_rooms']} rooms, got {len(room_ids)}")
+  
+              # Validate room existence & availability
+              rooms_cursor = db.rooms.find({
+                  "_id": {"$in": [ObjectId(rid) for rid in room_ids]},
+                  "hotel_id": hotel_id,
+                  "room_type": room_type,
+                  "status": "available"
+              })
+
+              valid_rooms = await rooms_cursor.to_list(length=len(room_ids) + 1)
+              if len(valid_rooms) != len(room_ids):
+                  raise ValueError(f"Invalid or unavailable rooms for type {room_type}")
+
+              all_room_ids.extend([room["_id"] for room in valid_rooms])
+
+              # Step 1: For each date, move locked_rooms → booked_rooms
+              for day_offset in range(nights):
+                  date = check_in_date + timedelta(days=day_offset)
+ 
+                  inv_result = await db.roomInventory.update_one({
+                      "hotel_id": hotel_id,
+                      "room_type": room_type,
+                      "date": date,
+                      "locked_rooms": {"$gte": len(room_ids)}
+                  }, {
+                      "$inc": {
+                          "locked_rooms": -len(room_ids),
+                          "booked_rooms": len(room_ids)
+                      },
+                      "$set": {"updated_at": datetime.utcnow()}
+                  })
+
+                  if inv_result.modified_count == 0:
+                      raise ValueError(f"Inventory update failed for {room_type} on {date.strftime('%Y-%m-%d')} — possible race condition")
+
+          # Step 2: Mark rooms as occupied
+          await db.rooms.update_many(
+              {"_id": {"$in": all_room_ids}},
+              {
+                  "$set": {
+                      "status": "occupied",
+                      "updated_at": datetime.utcnow()
+                  }
+              }
+          )
+
+          # Step 3: Update booking status and room assignments
+          await db.bookings.update_one(
+              {"_id": ObjectId(booking_id)},
+              {
+                  "$set": {
+                     "room_ids": [str(rid) for rid in all_room_ids],
+                     "booking_status": BookingStatus.CHECKED_IN.value,
+                     "check_in_time": datetime.utcnow(),
+                     "updated_at": datetime.utcnow()
+                  }
+              }
+          )
+
+          updated_booking = await db.bookings.find_one({"_id": ObjectId(booking_id)})
+          updated_booking["id"] = str(updated_booking["_id"])
+          return Booking.from_db(updated_booking)
+
+      except Exception as e:
+          raise ValueError(f"Error assigning rooms to booking: {str(e)}")'''
