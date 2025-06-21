@@ -266,6 +266,10 @@ class Mutation:
     @strawberry.field
     async def create_room(self, room_data: RoomInput) -> Room:
         return await RoomMutations().create_room(room_data)
+    
+    @strawberry.field
+    async def create_rooms(self, room_data: List[RoomInput]) -> List[Room]:
+        return await RoomMutations().create_rooms(room_data)
 
     @strawberry.field
     async def update_room(self, id: str, room_data: RoomUpdateInput) -> Room:
