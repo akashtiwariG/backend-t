@@ -9,12 +9,19 @@ from app.graphql.types.maintenance import MaintenanceType, MaintenanceCategory, 
 
 from app.graphql.types.room import (
     Room,
+    RoomDummy,
+    RoomTypeDummy,
     RoomInput,
     RoomUpdateInput,
     RoomStatusUpdateInput,
     RoomType,
     RoomStatus,
-    BedType
+    BedType,
+    RoomTypeDummy,
+    RoomTypeDummyInput,
+    RoomDummyInput,
+    UpdateRoomDummyInput,
+    UpdateRoomTypeInput
 )
 from app.db.mongodb import MongoDB
 
@@ -133,6 +140,341 @@ class RoomMutations:
 
         except Exception as e:
           raise ValueError(f"Error creating room: {str(e)}")
+        
+    @strawberry.mutation
+    async def create_room_dummy(self, room_data: RoomDummyInput) -> Room:
+        try:
+           db = MongoDB.database
+
+           # Validate hotel exists
+           hotel = await db.hotels.find_one({"_id": ObjectId(room_data.hotel_id)})
+           if not hotel:
+              raise ValueError("Hotel not found")
+
+           # Check for duplicate room number
+           existing_room = await db.roomsDummy.find_one({
+              "hotel_id": ObjectId(room_data.hotel_id),
+              "room_number": room_data.room_number
+           })
+           if existing_room:
+               raise ValueError(f"Room number {room_data.room_number} already exists in this hotel")
+
+           # Validate floor number
+           if room_data.floor > hotel.get('floor_count', 0):
+               raise ValueError(f"Floor number exceeds hotel's floor count")
+
+           # Fetch and validate RoomType
+           room_type = await db.roomTypes.find_one({
+               "room_type": room_data.room_type,
+               "hotel_id": ObjectId(room_data.hotel_id)
+           })
+           if not room_type:
+               raise ValueError("Room type not found for this hotel")
+
+           now = datetime.utcnow()
+
+           # Construct room with overrides (fallback to roomType defaults)
+           room_dict = {
+            "hotel_id": ObjectId(room_data.hotel_id),
+            "room_number": room_data.room_number,
+            "floor": room_data.floor,
+            "room_type": room_data.room_type,
+            "status": RoomStatus.AVAILABLE.value,
+            "is_active": True,
+            "created_at": now,
+            "updated_at": now,
+            # Optional fields only if provided
+            "price_per_night": room_data.price_per_night,
+            "base_occupancy": room_data.base_occupancy,
+            "max_occupancy": room_data.max_occupancy,
+            "extra_bed_allowed": room_data.extra_bed_allowed,
+            "extra_bed_price": room_data.extra_bed_price,
+            "room_size": room_data.room_size,
+            "bed_type": room_data.bed_type,
+            "bed_count": room_data.bed_count,
+            "amenities": room_data.amenities,
+            "description": room_data.description,
+            "images": room_data.images,
+            "is_smoking": room_data.is_smoking,
+        }
+
+           # Insert into DB
+           room_dict = {k: v for k, v in room_dict.items() if v is not None}
+           result = await db.roomsDummy.insert_one(room_dict)
+           room_dict["_id"] = result.inserted_id
+
+           # Populate room inventory for 365 days
+           start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+           for day_offset in range(365):
+               target_date = start_date + timedelta(days=day_offset)
+               await self.upsert_room_inventory_for_date(
+                   db=db,
+                   hotel_id=room_data.hotel_id,
+                   room_type=room_data.room_type,
+                   date=target_date,
+                   delta_total=1,
+                   delta_available=1
+               )
+
+           # Update hotel room count
+           await db.hotels.update_one(
+               {"_id": ObjectId(room_data.hotel_id)},
+               {
+                   "$inc": {"room_count": 1},
+                   "$set": {"updated_at": now}
+               }
+           )
+
+           return RoomDummy.from_db(room_dict)
+
+        except Exception as e:
+            raise ValueError(f"Error creating room: {str(e)}")
+        
+    @strawberry.mutation
+    async def create_rooms_dummy(self, rooms_data: List[RoomDummyInput]) -> List[RoomDummy]:
+       db = MongoDB.database
+       now = datetime.utcnow()
+       created_rooms = []
+
+       try:
+           for room_data in rooms_data:
+               # Validate hotel exists
+               hotel = await db.hotels.find_one({"_id": ObjectId(room_data.hotel_id)})
+               if not hotel:
+                   raise ValueError(f"Hotel not found for ID: {room_data.hotel_id}")
+
+               # Check for duplicate room number
+               existing_room = await db.roomsDummy.find_one({
+                   "hotel_id": ObjectId(room_data.hotel_id),
+                   "room_number": room_data.room_number
+               })
+               if existing_room:
+                   raise ValueError(f"Room number {room_data.room_number} already exists in hotel {room_data.hotel_id}")
+
+               # Validate floor number
+               if room_data.floor > hotel.get('floor_count', 0):
+                   raise ValueError(f"Floor number exceeds hotel's floor count for room {room_data.room_number}")
+
+               # Validate RoomType
+               room_type = await db.roomTypes.find_one({
+                   "room_type": room_data.room_type,
+                   "hotel_id": ObjectId(room_data.hotel_id)
+               })
+               if not room_type:
+                   raise ValueError(f"Room type {room_data.room_type} not found for hotel {room_data.hotel_id}")
+
+               # Construct room dict
+               room_dict = {
+                   "hotel_id": ObjectId(room_data.hotel_id),
+                   "room_number": room_data.room_number,
+                   "floor": room_data.floor,
+                   "room_type": room_data.room_type,
+                   "status": RoomStatus.AVAILABLE.value,
+                   "is_active": True,
+                   "created_at": now,
+                   "updated_at": now,
+                   "price_per_night": room_data.price_per_night,
+                   "base_occupancy": room_data.base_occupancy,
+                   "max_occupancy": room_data.max_occupancy,
+                   "extra_bed_allowed": room_data.extra_bed_allowed,
+                   "extra_bed_price": room_data.extra_bed_price,
+                   "room_size": room_data.room_size,
+                   "bed_type": room_data.bed_type,
+                   "bed_count": room_data.bed_count,
+                   "amenities": room_data.amenities,
+                   "description": room_data.description,
+                   "images": room_data.images,
+                   "is_smoking": room_data.is_smoking
+               }
+
+               # Clean None values
+               room_dict = {k: v for k, v in room_dict.items() if v is not None}
+
+               # Insert room
+               result = await db.roomsDummy.insert_one(room_dict)
+               room_dict["_id"] = result.inserted_id
+               created_rooms.append(RoomDummy.from_db(room_dict))
+
+               # Populate inventory
+               start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+               for day_offset in range(365):
+                   target_date = start_date + timedelta(days=day_offset)
+                   await self.upsert_room_inventory_for_date(
+                       db=db,
+                       hotel_id=room_data.hotel_id,
+                       room_type=room_data.room_type,
+                       date=target_date,
+                       delta_total=1,
+                       delta_available=1
+                   )
+
+               # Update hotel room count
+               await db.hotels.update_one(
+                   {"_id": ObjectId(room_data.hotel_id)},
+                   {
+                       "$inc": {"room_count": 1},
+                       "$set": {"updated_at": now}
+                   }
+               )
+ 
+           return created_rooms
+
+       except Exception as e:
+           raise ValueError(f"Error creating rooms: {str(e)}")
+
+        
+    @strawberry.mutation
+    async def create_room_type(self, room_type_data: RoomTypeDummyInput) -> RoomTypeDummy:
+       try:
+           db = MongoDB.database
+
+           # Validate hotel
+           hotel = await db.hotels.find_one({"_id": ObjectId(room_type_data.hotel_id)})
+           if not hotel:
+               raise ValueError("Hotel not found")
+
+           # Check for duplicate room type name in the hotel
+           existing_type = await db.roomTypes.find_one({
+               "hotel_id": ObjectId(room_type_data.hotel_id),
+               "room_type": room_type_data.room_type
+           })
+           if existing_type:
+               raise ValueError(f"Room type '{room_type_data.room_type}' already exists in this hotel")
+
+           now = datetime.utcnow()
+
+           room_type_dict = {
+               "hotel_id": ObjectId(room_type_data.hotel_id),
+               "room_type": room_type_data.room_type,
+               "price_per_night": room_type_data.price_per_night,
+               "base_occupancy": room_type_data.base_occupancy,
+               "max_occupancy": room_type_data.max_occupancy,
+               "extra_bed_allowed": room_type_data.extra_bed_allowed,
+               "extra_bed_price": room_type_data.extra_bed_price,
+               "room_size": room_type_data.room_size,
+               "bed_type": room_type_data.bed_type,
+               "bed_count": room_type_data.bed_count,
+               "amenities": room_type_data.amenities or [],
+               "description": room_type_data.description,
+               "images": room_type_data.images or [],
+               "is_smoking": room_type_data.is_smoking,
+               "created_at": now,
+               "updated_at": now
+           }
+
+           result = await db.roomTypes.insert_one(room_type_dict)
+           room_type_dict["_id"] = result.inserted_id
+
+           return RoomTypeDummy.from_db(room_type_dict)
+
+       except Exception as e:
+           raise ValueError(f"Error creating room type: {str(e)}")
+       
+
+    @strawberry.mutation
+    async def update_room_dummy(
+        self,
+        hotel_id: str,
+        room_dummy_id: str,
+        update_data: UpdateRoomDummyInput
+    ) -> RoomDummy:
+       try:
+           db = MongoDB.database
+
+           # Validate hotel exists
+           hotel = await db.hotels.find_one({"_id": ObjectId(hotel_id)})
+           if not hotel:
+               raise ValueError("Hotel not found")
+
+           # Validate the room dummy exists
+           existing = await db.roomsDummy.find_one({
+               "_id": ObjectId(room_dummy_id),
+               "hotel_id": ObjectId(hotel_id)
+           })
+           if not existing:
+               raise ValueError("RoomDummy not found in this hotel")
+
+           # Build update payload
+           update_fields = {
+               k: v for k, v in update_data.__dict__.items()
+               if v is not None
+           }
+           update_fields["updated_at"] = datetime.utcnow()
+   
+           # Perform the update
+           await db.roomsDummy.update_one(
+               {
+                   "_id": ObjectId(room_dummy_id),
+                   "hotel_id": ObjectId(hotel_id)
+               },
+               {"$set": update_fields}
+           )
+
+           # Fetch and return updated document
+           updated = await db.roomsDummy.find_one({
+               "_id": ObjectId(room_dummy_id),
+               "hotel_id": ObjectId(hotel_id)
+           })
+
+           return RoomDummy.from_db(updated)
+
+       except Exception as e:
+           raise ValueError(f"Error updating room dummy: {str(e)}")
+
+       
+
+    @strawberry.mutation
+    async def update_room_type(
+       self,
+       hotel_id: str,
+       room_type: RoomType,
+       update_data: UpdateRoomTypeInput
+    ) -> RoomTypeDummy:
+       try:
+           db = MongoDB.database
+
+           room_type_str = room_type.value.lower()
+           # Validate hotel exists
+           hotel = await db.hotels.find_one({"_id": ObjectId(hotel_id)})
+           if not hotel:
+              raise ValueError("Hotel not found")
+
+           # Find the room type to update
+           existing = await db.roomTypes.find_one({
+               "hotel_id": ObjectId(hotel_id),
+               "room_type": room_type_str
+           })
+           if not existing:
+               raise ValueError("Room type not found for this hotel")
+
+           # Prepare update fields
+           update_fields = {
+               k: v for k, v in update_data.__dict__.items()
+               if v is not None
+           }
+           update_fields["updated_at"] = datetime.utcnow()
+
+           # Perform the update
+           await db.roomTypes.update_one(
+               {
+                   "hotel_id": ObjectId(hotel_id),
+                   "room_type": room_type_str
+               },
+               {"$set": update_fields}
+           )
+
+           # Fetch updated document
+           updated = await db.roomTypes.find_one({
+               "hotel_id": ObjectId(hotel_id),
+               "room_type": room_type_str
+           })
+
+           return RoomTypeDummy.from_db(updated)
+
+       except Exception as e:
+           raise ValueError(f"Error updating room type: {str(e)}")
+
+
 
     
     '''@strawberry.mutation
@@ -346,105 +688,7 @@ class RoomMutations:
         except Exception as e:
             raise ValueError(f"Error in bulk room status update: {str(e)}")''' 
     
-    @strawberry.mutation
-    async def create_rooms(self, room_data: List[RoomInput]) -> List[Room]:
-       try:
-           db = MongoDB.database
-           inserted_rooms: List[Room] = []
-
-           # Group by hotel to reduce DB hits
-           hotel_cache = {}
-           
-           # Validate all inputs before any write
-           for room_input in room_data:
-               # Cache hotel lookup
-               if room_input.hotel_id not in hotel_cache:
-                   hotel = await db.hotels.find_one({"_id": ObjectId(room_input.hotel_id)})
-                   if not hotel:
-                       raise ValueError(f"Hotel not found for ID: {room_input.hotel_id}")
-                   hotel_cache[room_input.hotel_id] = hotel
-               else:
-                   hotel = hotel_cache[room_input.hotel_id]
-
-               # Duplicate room number check
-               existing_room = await db.rooms.find_one({
-                   "hotel_id": room_input.hotel_id,
-                   "room_number": room_input.room_number
-               })
-               if existing_room:
-                   raise ValueError(f"Room number {room_input.room_number} already exists in hotel {room_input.hotel_id}")
-
-               # Floor validation
-               if room_input.floor > hotel.get("floor_count", 0):
-                   raise ValueError(f"Floor number {room_input.floor} exceeds hotel's floor count for hotel {room_input.hotel_id}")
-
-           # Now all inputs are valid, proceed to insert
-           room_docs = []
-           for room_input in room_inputs:
-               doc = {
-                   "hotel_id": room_input.hotel_id,
-                   "room_number": room_input.room_number,
-                   "floor": room_input.floor,
-                   "room_type": room_input.room_type,
-                   "status": RoomStatus.AVAILABLE.value,
-                   "price_per_night": room_input.price_per_night,
-                   "base_occupancy": room_input.base_occupancy,
-                   "max_occupancy": room_input.max_occupancy,
-                   "extra_bed_allowed": room_input.extra_bed_allowed,
-                   "extra_bed_price": room_input.extra_bed_price,
-                   "room_size": room_input.room_size,
-                   "bed_type": room_input.bed_type,
-                   "bed_count": room_input.bed_count,
-                   "amenities": room_input.amenities or [],
-                   "description": room_input.description,
-                   "images": [],
-                   "is_smoking": room_input.is_smoking,
-                   "is_active": True,
-                   "created_at": datetime.utcnow(),
-                   "updated_at": datetime.utcnow(),
-               }
-               room_docs.append(doc)
-
-        # Bulk insert rooms
-           result = await db.rooms.insert_many(room_docs)
-
-           # Attach IDs to room docs
-           for i, _id in enumerate(result.inserted_ids):
-               room_docs[i]["id"] = str(_id)
-               inserted_rooms.append(Room.from_db(room_docs[i]))
-
-           # Populate room inventory
-           start_date = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-           for doc in room_docs:
-               for offset in range(365):
-                   target_date = start_date + timedelta(days=offset)
-                   await self.upsert_room_inventory_for_date(
-                       db=db,
-                       hotel_id=doc["hotel_id"],
-                       room_type=doc["room_type"],
-                       date=target_date,
-                       delta_total=1,
-                       delta_available=1
-                   )
-
-           # Bulk update hotel room counts
-           hotel_room_count = {}
-           for room in room_inputs:
-               hotel_room_count[room.hotel_id] = hotel_room_count.get(room.hotel_id, 0) + 1
-
-           for hotel_id, count in hotel_room_count.items():
-               await db.hotels.update_one(
-                   {"_id": ObjectId(hotel_id)},
-                   {
-                       "$inc": {"room_count": count},
-                       "$set": {"updated_at": datetime.utcnow()}
-                }
-               )
-
-           return inserted_rooms
-
-       except Exception as e:
-           raise ValueError(f"Error creating multiple rooms: {str(e)}")
+    
 
 
     @strawberry.mutation

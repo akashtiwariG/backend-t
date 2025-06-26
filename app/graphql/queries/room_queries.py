@@ -9,10 +9,23 @@ from app.graphql.types.room import (
     RoomType,
     RoomStatus,
     BedType,
-    RoomInventoryType
+    RoomInventoryType,
+    RoomTypeDummy,
+    RoomDummy
 )
 from app.db.mongodb import MongoDB
 
+def merge_room_with_room_type(room: dict, room_type: dict) -> dict:
+       merged = room.copy()
+       fallback_fields = [
+           "price_per_night", "base_occupancy", "max_occupancy", "extra_bed_allowed",
+           "extra_bed_price", "room_size", "bed_type", "bed_count",
+           "amenities", "description", "is_smoking"
+        ]
+       for field in fallback_fields:
+           if field not in merged or merged[field] is None:
+               merged[field] = room_type.get(field)
+       return merged
 @strawberry.type
 class RoomQueries:
     @strawberry.field
@@ -181,4 +194,84 @@ class RoomQueries:
                 updated_at=doc["updated_at"],
             ))
 
-        return results
+        return results    
+    
+    
+    @strawberry.field
+    async def get_room_dummy(self, room_dummy_id: str) -> Optional[RoomDummy]:
+       db = MongoDB.database
+       try:
+           room = await db.roomsDummy.find_one({"_id": ObjectId(room_dummy_id)})
+           if not room:
+               return None
+
+           # Get the corresponding roomType
+           room_type = await db.roomTypes.find_one({
+               "hotel_id": room["hotel_id"],
+               "room_type": room["room_type"]
+           })
+
+           # Merge and return
+           if room_type:
+               merged = merge_room_with_room_type(room, room_type)
+               return Room.from_db(merged)
+           else:
+               return Room.from_db(room)
+
+       except Exception as e:
+           print(f"Error in get_room_dummy: {e}")
+           raise ValueError("Failed to fetch room dummy")
+
+
+    @strawberry.field
+    async def get_rooms_dummy(self, hotel_id: str, room_type: Optional[RoomType] = None, status: Optional[RoomStatus] = None) -> List[Room]:
+       db = MongoDB.database
+
+       # Build dynamic filter
+       query = {"hotel_id": ObjectId(hotel_id)}
+       if room_type:
+           query["room_type"] = room_type.value
+       if status:
+           query["status"] = status.value
+       # Fetch matching rooms
+       rooms = await db.roomsDummy.find(query).to_list(length=None)
+
+       # Fetch all room types for the hotel once
+       room_types = await db.roomTypes.find({"hotel_id": ObjectId(hotel_id)}).to_list(length=None)
+       room_type_map = {rt["room_type"]: rt for rt in room_types}
+
+       full_rooms = []
+       for room in rooms:
+           try:
+               type_data = room_type_map.get(room["room_type"])
+               if type_data:
+                   merged = merge_room_with_room_type(room, type_data)
+                   full_rooms.append(Room.from_db(merged))
+               else:
+                   full_rooms.append(Room.from_db(room))  # fallback
+           except Exception as e:
+               print(f"Skipping room {room.get('room_number')} due to error: {e}")
+               continue
+
+       return full_rooms
+
+
+    @strawberry.field
+    async def get_room_type(self,hotel_id: str, room_type: RoomType) -> Optional[RoomTypeDummy]:
+        """
+        Fetch a room type by hotel ID and room type enum.
+        """
+        try:
+            db = MongoDB.database
+            room_type_doc = await db.roomTypes.find_one({
+                "hotel_id": ObjectId(hotel_id),
+                "room_type": room_type.lower()  # assuming stored as lowercase
+            })
+            if room_type_doc:
+                return RoomTypeDummy.from_db(room_type_doc)
+            return None
+        except Exception as e:
+            raise ValueError(f"Error fetching room type: {str(e)}")
+    
+
+    

@@ -19,13 +19,18 @@ from ..graphql.types.hotel import (
 from ..graphql.types.maintenance import MaintenanceCategory, MaintenanceType, PartDetailInput, MaintenanceStatus
 from ..graphql.types.room import (
     Room,
+    RoomDummyInput,
     RoomInput,
     RoomUpdateInput,
-   
     RoomType,
     RoomStatus,
     BedType,
-    RoomInventoryType
+    RoomInventoryType,
+    RoomDummy,
+    RoomTypeDummy,
+    RoomTypeDummyInput,
+    UpdateRoomDummyInput,
+    UpdateRoomTypeInput
 )
 from ..graphql.types.booking import (
     Booking,
@@ -110,6 +115,18 @@ class Query:
         status: RoomStatus
     ) -> List[Room]:
         return await RoomQueries().get_rooms_by_status(hotel_id, status)
+    
+    @strawberry.field
+    async def get_room_dummy(self, room_dummy_id: str) -> Optional[RoomDummy]:
+        return await RoomQueries().get_room_dummy(room_dummy_id)
+    
+    @strawberry.field
+    async def get_rooms_dummy(self,hotel_id: str, room_type: Optional[RoomType] = None, status: Optional[RoomStatus] = None) -> List[RoomDummy]:
+        return await RoomQueries().get_rooms_dummy(hotel_id,room_type,status)
+    
+    @strawberry.field
+    async def get_room_type(self,hotel_id: str, room_type: RoomType) -> Optional[RoomTypeDummy]:
+        return await RoomQueries().get_room_type(hotel_id,room_type)
     
     @strawberry.field
     async def get_room_inventory(
@@ -268,12 +285,17 @@ class Mutation:
         return await RoomMutations().create_room(room_data)
     
     @strawberry.field
-    async def create_rooms(self, room_data: List[RoomInput]) -> List[Room]:
-        return await RoomMutations().create_rooms(room_data)
-
+    async def create_room_dummy(self, room_data: RoomDummyInput) -> RoomDummy:
+        return await RoomMutations().create_room_dummy(room_data)
+    
+    @strawberry.mutation
+    async def create_rooms_dummy(self, rooms_data: List[RoomDummyInput]) -> List[RoomDummy]:
+        return await RoomMutations().create_rooms_dummy(rooms_data)
+    
     @strawberry.field
-    async def update_room(self, id: str, room_data: RoomUpdateInput) -> Room:
-        return await RoomMutations().update_room(id, room_data)
+    async def create_room_type(self, room_type_data: RoomTypeDummyInput) -> RoomTypeDummy:
+        return await RoomMutations().create_room_type(room_type_data)
+
 
     @strawberry.field
     async def delete_room(self, id: str) -> bool:
@@ -314,6 +336,24 @@ class Mutation:
         extra_bed_price: Optional[float] = None
     ) -> Room:
         return await RoomMutations().update_room_pricing(room_id, price_per_night, extra_bed_price)
+    
+    @strawberry.mutation
+    async def update_room_dummy(
+        self,
+        hotel_id: str,
+        room_dummy_id: str,
+        update_data: UpdateRoomDummyInput
+    ) -> RoomDummy:
+        return await RoomMutations().update_room_dummy(hotel_id,room_dummy_id,update_data)
+    
+    @strawberry.field
+    async def update_room_type(
+       self,
+       hotel_id: str,
+       room_type: RoomType,
+       update_data: UpdateRoomTypeInput
+    ) -> RoomTypeDummy:
+        return await RoomMutations().update_room_type(hotel_id,room_type,update_data)
     
     @strawberry.field
     async def mark_room_maintenance(

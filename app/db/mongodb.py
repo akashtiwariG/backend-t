@@ -159,6 +159,28 @@ class MongoDB:
                 IndexModel([("hotel_id", ASCENDING), ("room_type", ASCENDING), ("date", ASCENDING)], unique=True)
             ])
 
+            # RoomDummy Collection Indexes
+            await cls.database.roomsDummy.create_indexes([
+                IndexModel([("hotel_id", ASCENDING)]),
+                IndexModel([("room_number", ASCENDING)]),
+                IndexModel([("hotel_id", ASCENDING), ("room_number", ASCENDING)], unique=True),
+                IndexModel([("status", ASCENDING)]),
+                IndexModel([("room_type",ASCENDING)]),
+                IndexModel([("floor", ASCENDING)]),
+                IndexModel([("price_per_night", ASCENDING)]),
+                IndexModel([("is_active", ASCENDING)]),
+                IndexModel([("bed_type", ASCENDING)])
+            ])
+
+            # RoomTypes Collection Indexes
+            await cls.database.roomTypes.create_indexes([
+                IndexModel([("hotel_id", ASCENDING)]),
+                IndexModel([("room_type", ASCENDING)]),
+                IndexModel([("hotel_id", ASCENDING), ("room_type", ASCENDING)], unique=True),
+                IndexModel([("price_per_night", ASCENDING)]),
+                IndexModel([("bed_type", ASCENDING)]),
+                IndexModel([("is_smoking", ASCENDING)])
+            ])
 
             print("All indexes created successfully!")
         except Exception as e:
@@ -372,6 +394,91 @@ class MongoDB:
                   }
                 }
             })
+
+            # RoomDummy Collection Indexes
+            await cls.database.command({
+                "collMod": "roomsDummy",
+                "validator": {
+                    "$jsonSchema": {
+                        "bsonType": "object",
+                        "required": ["hotel_id", "room_number","floor","room_type", "status", "is_active", "created_at", "updated_at"],
+                        "properties": {
+                             "hotel_id": { "bsonType": "objectId" },
+                             "room_number": { "bsonType": "string" },
+                             "room_type": {
+                               "enum": ["standard", "deluxe", "suite", "executive", "presidential"]
+                            },
+                             "status": { "enum": ["available", "booked", "occupied", "maintenance"] },
+                             "floor": { "bsonType": "int" },
+
+                             "price_per_night": { "bsonType": "double" },
+                             "base_occupancy": { "bsonType": "int" },
+                             "max_occupancy": { "bsonType": "int" },
+                             "extra_bed_allowed": { "bsonType": "bool" },
+                             "extra_bed_price": { "bsonType": ["double", "null"] },
+                             "room_size": { "bsonType": "double" },
+                             "bed_type": { "enum": ["single", "double", "queen", "king"] },
+                             "bed_count": { "bsonType": "int" },
+                             "amenities": {
+                                "bsonType": "array",
+                                "items": { "bsonType": "string" }
+                             }, 
+                            "description": { "bsonType": ["string", "null"] },
+                            "images": {
+                                "bsonType": "array",
+                                "items": { "bsonType": "string" }
+                            },
+                            "is_smoking": { "bsonType": "bool" },
+                            "is_active": { "bsonType": "bool" },
+                            "last_cleaned": { "bsonType": ["date", "null"] },
+                            "last_maintained": { "bsonType": ["date", "null"] },
+                            "maintenance_notes": { "bsonType": ["string", "null"] },
+
+                            "created_at": { "bsonType": "date" },
+                            "updated_at": { "bsonType": "date" }
+                        }
+                    }
+                }
+    })
+            
+            # RoomTypes Collection Validation
+            await cls.database.command({
+                "collMod": "roomTypes",
+                "validator": {
+                "$jsonSchema": {
+                    "bsonType": "object",
+                    "required": ["hotel_id", "room_type", "price_per_night", "base_occupancy", "max_occupancy", "room_size", "bed_type", "bed_count", "amenities", "is_smoking", "created_at", "updated_at"],
+                    "properties": {
+                        "hotel_id": { "bsonType": "objectId" },
+                        "room_type": {  "enum": ["standard", "deluxe", "suite", "executive", "presidential"]},
+
+                        "price_per_night": { "bsonType": "double" },
+                        "base_occupancy": { "bsonType": "int" },
+                        "max_occupancy": { "bsonType": "int" },
+                        "extra_bed_allowed": { "bsonType": "bool" },
+                        "extra_bed_price": { "bsonType": ["double", "null"] },
+                        "room_size": { "bsonType": "double" },
+                        "bed_type": { "enum": ["single", "double", "queen", "king"] },
+                        "bed_count": { "bsonType": "int" },
+
+                        "amenities": {
+                            "bsonType": "array",
+                            "items": { "bsonType": "string" }
+                        },
+                       "description": { "bsonType": ["string", "null"] },
+                       "images": {
+                          "bsonType": "array",
+                          "items": { "bsonType": "string" }
+                        },
+                       "is_smoking": { "bsonType": "bool" },
+
+                       "created_at": { "bsonType": "date" },
+                      "updated_at": { "bsonType": "date" }
+      }
+    }
+  }
+})
+
 
 
             print("All collection validations set up successfully!")
