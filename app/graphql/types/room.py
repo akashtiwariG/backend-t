@@ -35,7 +35,7 @@ class RoomAmenity:
     category: str
     icon: Optional[str]
 
-@strawberry.type
+'''@strawberry.type
 class Room:
     id: str
     hotel_id: str
@@ -90,9 +90,9 @@ class Room:
             created_at=db_data['created_at'],
             updated_at=db_data['updated_at']
         )
-    
+    '''
 @strawberry.type
-class RoomDummy:
+class Room:
     id: str
     hotel_id: str
     room_type:RoomType
@@ -100,6 +100,8 @@ class RoomDummy:
     floor: int
     status: RoomStatus
     price_per_night: Optional[float]
+    price_per_night_max: Optional[float]
+    price_per_night_min: Optional[float]
     base_occupancy: Optional[int]
     max_occupancy: Optional[int]
     extra_bed_allowed: Optional[bool]
@@ -133,6 +135,8 @@ class RoomDummy:
 
             # Optional fields - use .get()
             price_per_night=db_data.get("price_per_night"),
+            price_per_night_max=db_data.get("price_per_night_max"),
+            price_per_night_min=db_data.get("price_per_night_min"),
             base_occupancy=db_data.get("base_occupancy"),
             max_occupancy=db_data.get("max_occupancy"),
             extra_bed_allowed=db_data.get("extra_bed_allowed"),
@@ -156,6 +160,8 @@ class RoomTypeDummy:
     hotel_id: str
     room_type: RoomType
     price_per_night: float
+    price_per_night_max: float
+    price_per_night_min: float
     base_occupancy: int
     max_occupancy: int
     extra_bed_allowed: bool
@@ -176,6 +182,8 @@ class RoomTypeDummy:
             hotel_id=str(db_data['hotel_id']),
             room_type=db_data['room_type'],
             price_per_night=db_data['price_per_night'],
+            price_per_night_max=db_data['price_per_night_max'],
+            price_per_night_min=db_data['price_per_night_min'],
             base_occupancy=db_data['base_occupancy'],
             max_occupancy=db_data['max_occupancy'],
             extra_bed_allowed=db_data['extra_bed_allowed'],
@@ -191,7 +199,7 @@ class RoomTypeDummy:
             updated_at=db_data['updated_at']
         )
 
-@strawberry.input
+'''@strawberry.input
 class RoomInput:
     hotel_id: str
     room_number: str
@@ -208,15 +216,17 @@ class RoomInput:
     amenities: Optional[List[str]] = None
     description: Optional[str] = None
     is_smoking: bool = False
-
+'''
 @strawberry.input
-class RoomDummyInput:
+class RoomInput:
     hotel_id: str
     room_number: str
     floor: int
     room_type: RoomType
 
     price_per_night: Optional[float] = None
+    price_per_night_max: Optional[float] = None
+    price_per_night_min: Optional[float] = None
     base_occupancy: Optional[int] = None
     max_occupancy: Optional[int] = None
     extra_bed_allowed: Optional[bool] = None
@@ -230,10 +240,12 @@ class RoomDummyInput:
     images: Optional[List[str]] = None
     
 @strawberry.input
-class RoomTypeDummyInput:
+class RoomTypeInput:
     hotel_id: str
     room_type: RoomType
     price_per_night: float
+    price_per_night_max: float
+    price_per_night_min: float
     base_occupancy: int
     max_occupancy: int
     extra_bed_allowed: bool = False
@@ -245,7 +257,7 @@ class RoomTypeDummyInput:
     description: Optional[str] = None
     is_smoking: bool = False
     images: Optional[List[str]] = None
-@strawberry.input
+'''@strawberry.input
 class RoomUpdateInput:
     room_number: Optional[str] = None
     room_type: Optional[RoomType] = None
@@ -266,12 +278,16 @@ class RoomStatusUpdateInput:
     room_id: str
     status: RoomStatus
     notes: Optional[str] = None
+
+'''
 @strawberry.input
-class UpdateRoomDummyInput:
+class UpdateRoomInput:
     room_number: Optional[str] = None
     room_type: Optional[RoomType] = None
     status: Optional[RoomStatus] = None
     price_per_night: Optional[float] = None
+    price_per_night_max: Optional[float] = None
+    price_per_night_max: Optional[float] = None
     base_occupancy: Optional[int] = None
     max_occupancy: Optional[int] = None
     extra_bed_allowed: Optional[bool] = None
@@ -284,6 +300,8 @@ class UpdateRoomDummyInput:
 @strawberry.input
 class UpdateRoomTypeInput:
     price_per_night: Optional[float] = None
+    price_per_night_max: Optional[float] = None
+    price_per_night_min: Optional[float] = None
     base_occupancy: Optional[int] = None
     max_occupancy: Optional[int] = None
     extra_bed_allowed: Optional[bool] = None

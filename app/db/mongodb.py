@@ -90,15 +90,7 @@ class MongoDB:
             IndexModel([("status", ASCENDING), ("star_rating", ASCENDING)])
         ])
 
-            # Rooms Collection Indexes
-            await cls.database.rooms.create_indexes([
-                IndexModel([("hotel_id", ASCENDING)]),
-                IndexModel([("room_number", ASCENDING)]),
-                IndexModel([("hotel_id", ASCENDING), ("room_number", ASCENDING)], unique=True),
-                IndexModel([("status", ASCENDING)]),
-                IndexModel([("room_type", ASCENDING)]),
-                IndexModel([("floor", ASCENDING)])
-            ])
+            
 
             # Booking Collection Indexes
             await cls.database.bookings.create_indexes([
@@ -159,8 +151,8 @@ class MongoDB:
                 IndexModel([("hotel_id", ASCENDING), ("room_type", ASCENDING), ("date", ASCENDING)], unique=True)
             ])
 
-            # RoomDummy Collection Indexes
-            await cls.database.roomsDummy.create_indexes([
+            # Room Collection Indexes
+            await cls.database.rooms.create_indexes([
                 IndexModel([("hotel_id", ASCENDING)]),
                 IndexModel([("room_number", ASCENDING)]),
                 IndexModel([("hotel_id", ASCENDING), ("room_number", ASCENDING)], unique=True),
@@ -168,6 +160,8 @@ class MongoDB:
                 IndexModel([("room_type",ASCENDING)]),
                 IndexModel([("floor", ASCENDING)]),
                 IndexModel([("price_per_night", ASCENDING)]),
+                IndexModel([("price_per_night_max", ASCENDING)]),
+                IndexModel([("price_per_night_min", ASCENDING)]),
                 IndexModel([("is_active", ASCENDING)]),
                 IndexModel([("bed_type", ASCENDING)])
             ])
@@ -178,6 +172,8 @@ class MongoDB:
                 IndexModel([("room_type", ASCENDING)]),
                 IndexModel([("hotel_id", ASCENDING), ("room_type", ASCENDING)], unique=True),
                 IndexModel([("price_per_night", ASCENDING)]),
+                IndexModel([("price_per_night_max", ASCENDING)]),
+                IndexModel([("price_per_night_min", ASCENDING)]),
                 IndexModel([("bed_type", ASCENDING)]),
                 IndexModel([("is_smoking", ASCENDING)])
             ])
@@ -395,9 +391,9 @@ class MongoDB:
                 }
             })
 
-            # RoomDummy Collection Indexes
+            # Room Collection Indexes
             await cls.database.command({
-                "collMod": "roomsDummy",
+                "collMod": "rooms",
                 "validator": {
                     "$jsonSchema": {
                         "bsonType": "object",
@@ -412,6 +408,8 @@ class MongoDB:
                              "floor": { "bsonType": "int" },
 
                              "price_per_night": { "bsonType": "double" },
+                             "price_per_night_max": { "bsonType": "double" },
+                             "price_per_night_min": { "bsonType": "double" },
                              "base_occupancy": { "bsonType": "int" },
                              "max_occupancy": { "bsonType": "int" },
                              "extra_bed_allowed": { "bsonType": "bool" },
@@ -453,6 +451,8 @@ class MongoDB:
                         "room_type": {  "enum": ["standard", "deluxe", "suite", "executive", "presidential"]},
 
                         "price_per_night": { "bsonType": "double" },
+                        "price_per_night_max": { "bsonType": "double" },
+                        "price_per_night_min": { "bsonType": "double" },
                         "base_occupancy": { "bsonType": "int" },
                         "max_occupancy": { "bsonType": "int" },
                         "extra_bed_allowed": { "bsonType": "bool" },
@@ -486,3 +486,12 @@ class MongoDB:
             print(f"Error setting up collection validations: {e}")
             raise
 
+'''# Rooms Collection Indexes
+            await cls.database.rooms.create_indexes([
+                IndexModel([("hotel_id", ASCENDING)]),
+                IndexModel([("room_number", ASCENDING)]),
+                IndexModel([("hotel_id", ASCENDING), ("room_number", ASCENDING)], unique=True),
+                IndexModel([("status", ASCENDING)]),
+                IndexModel([("room_type", ASCENDING)]),
+                IndexModel([("floor", ASCENDING)])
+            ])'''

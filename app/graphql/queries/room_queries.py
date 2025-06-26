@@ -11,7 +11,6 @@ from app.graphql.types.room import (
     BedType,
     RoomInventoryType,
     RoomTypeDummy,
-    RoomDummy
 )
 from app.db.mongodb import MongoDB
 
@@ -28,54 +27,6 @@ def merge_room_with_room_type(room: dict, room_type: dict) -> dict:
        return merged
 @strawberry.type
 class RoomQueries:
-    @strawberry.field
-    async def get_room(self, room_id: str) -> Optional[Room]:
-        """
-        Fetch a single room by its ID.
-        """
-        try:
-            db = MongoDB.database
-            room = await db.rooms.find_one({"_id": ObjectId(room_id)})
-            if room:
-                return Room.from_db(room)
-            return None
-        except Exception as e:
-            raise ValueError(f"Error fetching room: {str(e)}")
-
-    @strawberry.field
-    async def get_rooms(
-        self,
-        hotel_id: Optional[str] = None,
-        room_type: Optional[RoomType] = None,
-        status: Optional[RoomStatus] = None,
-        bed_type: Optional[BedType] = None,
-        min_price: Optional[float] = None,
-        max_price: Optional[float] = None,
-        limit: Optional[int] = 10,
-        offset: Optional[int] = 0
-    ) -> List[Room]:
-        """
-        Fetch a list of rooms with optional filters.
-        """
-        try:
-            db =MongoDB.database
-            query = {}
-
-            if hotel_id:
-                query["hotel_id"] = hotel_id
-            if room_type:
-                query["room_type"] = room_type.value
-            if status:
-                query["status"] = status.value
-            if bed_type:
-                query["bed_type"] = bed_type.value
-            if min_price is not None and max_price is not None:
-                query["price_per_night"] = {"$gte": min_price, "$lte": max_price}
-
-            rooms = await db.rooms.find(query).skip(offset).limit(limit).to_list(length=limit)
-            return [Room.from_db(room) for room in rooms]
-        except Exception as e:
-            raise ValueError(f"Error fetching rooms: {str(e)}")
 
     @strawberry.field
     async def get_available_rooms(
@@ -198,10 +149,10 @@ class RoomQueries:
     
     
     @strawberry.field
-    async def get_room_dummy(self, room_dummy_id: str) -> Optional[RoomDummy]:
+    async def get_room(self, room_id: str) -> Optional[Room]:
        db = MongoDB.database
        try:
-           room = await db.roomsDummy.find_one({"_id": ObjectId(room_dummy_id)})
+           room = await db.rooms.find_one({"_id": ObjectId(room_id)})
            if not room:
                return None
 
@@ -224,7 +175,7 @@ class RoomQueries:
 
 
     @strawberry.field
-    async def get_rooms_dummy(self, hotel_id: str, room_type: Optional[RoomType] = None, status: Optional[RoomStatus] = None) -> List[Room]:
+    async def get_rooms(self, hotel_id: str, room_type: Optional[RoomType] = None, status: Optional[RoomStatus] = None) -> List[Room]:
        db = MongoDB.database
 
        # Build dynamic filter
@@ -234,7 +185,7 @@ class RoomQueries:
        if status:
            query["status"] = status.value
        # Fetch matching rooms
-       rooms = await db.roomsDummy.find(query).to_list(length=None)
+       rooms = await db.rooms.find(query).to_list(length=None)
 
        # Fetch all room types for the hotel once
        room_types = await db.roomTypes.find({"hotel_id": ObjectId(hotel_id)}).to_list(length=None)
@@ -272,6 +223,55 @@ class RoomQueries:
             return None
         except Exception as e:
             raise ValueError(f"Error fetching room type: {str(e)}")
+        
+        '''@strawberry.field
+    async def get_room(self, room_id: str) -> Optional[Room]:
+        """
+        Fetch a single room by its ID.
+        """
+        try:
+            db = MongoDB.database
+            room = await db.rooms.find_one({"_id": ObjectId(room_id)})
+            if room:
+                return Room.from_db(room)
+            return None
+        except Exception as e:
+            raise ValueError(f"Error fetching room: {str(e)}")
+
+    @strawberry.field
+    async def get_rooms(
+        self,
+        hotel_id: Optional[str] = None,
+        room_type: Optional[RoomType] = None,
+        status: Optional[RoomStatus] = None,
+        bed_type: Optional[BedType] = None,
+        min_price: Optional[float] = None,
+        max_price: Optional[float] = None,
+        limit: Optional[int] = 10,
+        offset: Optional[int] = 0
+    ) -> List[Room]:
+        """
+        Fetch a list of rooms with optional filters.
+        """
+        try:
+            db =MongoDB.database
+            query = {}
+
+            if hotel_id:
+                query["hotel_id"] = hotel_id
+            if room_type:
+                query["room_type"] = room_type.value
+            if status:
+                query["status"] = status.value
+            if bed_type:
+                query["bed_type"] = bed_type.value
+            if min_price is not None and max_price is not None:
+                query["price_per_night"] = {"$gte": min_price, "$lte": max_price}
+
+            rooms = await db.rooms.find(query).skip(offset).limit(limit).to_list(length=limit)
+            return [Room.from_db(room) for room in rooms]
+        except Exception as e:
+            raise ValueError(f"Error fetching rooms: {str(e)}")'''
     
 
     
