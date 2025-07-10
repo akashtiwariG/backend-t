@@ -4,13 +4,6 @@ from typing import List, Optional
 from datetime import datetime
 from enum import Enum
 
-@strawberry.enum
-class RoomType(str, Enum):
-    STANDARD = "standard"
-    DELUXE = "deluxe"
-    SUITE = "suite"
-    EXECUTIVE = "executive"
-    PRESIDENTIAL = "presidential"
 
 @strawberry.enum
 class RoomStatus(str, Enum):
@@ -95,7 +88,7 @@ class Room:
 class Room:
     id: str
     hotel_id: str
-    room_type:RoomType
+    room_type:str
     room_number: str
     floor: int
     status: RoomStatus
@@ -158,7 +151,7 @@ class Room:
 class RoomTypeDummy:
     id: str
     hotel_id: str
-    room_type: RoomType
+    room_type: str
     price_per_night: float
     price_per_night_max: float
     price_per_night_min: float
@@ -222,7 +215,7 @@ class RoomInput:
     hotel_id: str
     room_number: str
     floor: int
-    room_type: RoomType
+    room_type: str
 
     price_per_night: Optional[float] = None
     price_per_night_max: Optional[float] = None
@@ -242,7 +235,7 @@ class RoomInput:
 @strawberry.input
 class RoomTypeInput:
     hotel_id: str
-    room_type: RoomType
+    room_type: str
     price_per_night: float
     price_per_night_max: float
     price_per_night_min: float
@@ -283,7 +276,7 @@ class RoomStatusUpdateInput:
 @strawberry.input
 class UpdateRoomInput:
     room_number: Optional[str] = None
-    room_type: Optional[RoomType] = None
+    room_type: Optional[str] = None
     status: Optional[RoomStatus] = None
     price_per_night: Optional[float] = None
     price_per_night_max: Optional[float] = None

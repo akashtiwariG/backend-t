@@ -12,7 +12,7 @@ from app.graphql.types.booking import (
     PaymentStatus,
     PaymentInput,
 )
-from app.graphql.types.room import (RoomStatus,RoomType)
+from app.graphql.types.room import (RoomStatus)
 from app.db.mongodb import MongoDB
 
 @strawberry.type
@@ -26,7 +26,7 @@ class BookingMutations:
 
           # 1. Validate and lock inventory for each room_type and each date
           for rt in booking_data.room_type_bookings:
-              room_type = rt.room_type
+              room_type = rt.room_type.lower()
               number_of_rooms = rt.number_of_rooms
   
               for day_offset in range(nights):
@@ -60,11 +60,14 @@ class BookingMutations:
                   if result.modified_count == 0:
                       raise ValueError(f"Failed to lock {room_type} rooms on {date.strftime('%Y-%m-%d')}")
 
+            
+
               # Get pricing
-              room_type_price = await db.rooms.find_one({
-                  "hotel_id": booking_data.hotel_id,
+              room_type_price = await db.roomTypes.find_one({
+                  "hotel_id": ObjectId(booking_data.hotel_id),
                   "room_type": room_type
               })
+              
  
               if not room_type_price:
                   raise ValueError(f"Pricing not configured for room type {room_type}")
@@ -139,7 +142,7 @@ class BookingMutations:
     async def assign_single_room_to_booking(
       self,
       booking_id: str,
-      room_type: RoomType,
+      room_type: str,
       room_id: str
     ) -> Booking:
       try:
@@ -179,7 +182,7 @@ class BookingMutations:
           # Step 2: Validate Room existence and availability
           room_obj = await db.rooms.find_one({
               "_id": ObjectId(room_id),
-              "hotel_id": hotel_id,
+              "hotel_id": ObjectId(hotel_id),
               "room_type": room_type,
               "status": "available"
           })

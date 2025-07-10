@@ -8,7 +8,7 @@ from app.graphql.types.booking import (
     BookingStatus,
     PaymentStatus,
 )
-from app.graphql.types.room import RoomType
+
 from app.db.mongodb import MongoDB
 
 
@@ -29,7 +29,7 @@ class BookingQueries:
         self,
         hotel_id: Optional[str] = None,
         room_id: Optional[str] = None,
-        room_type: Optional[RoomType] = None,
+        room_type: Optional[str] = None,
         booking_status: Optional[BookingStatus] = None,
         payment_status: Optional[PaymentStatus] = None,
         start_date: Optional[datetime] = None,
@@ -51,7 +51,7 @@ class BookingQueries:
             if room_type:
                 # Match if any room_type_bookings has this room_type
                 query["room_type_bookings"] = {
-                    "$elemMatch": {"room_type": room_type.value}
+                    "$elemMatch": {"room_type": room_type.lower()}
                 }
 
             if booking_status:

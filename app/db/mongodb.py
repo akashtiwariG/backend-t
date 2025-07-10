@@ -197,7 +197,7 @@ class MongoDB:
                         "properties": {
                             "email": {"bsonType": "string"},
                             "name": {"bsonType": "string"},
-                            "role": {"enum": ["superadmin", "hotel_admin", "staff", "housekeeper"]},
+                            "role": {"enum": ["superadmin", "hotel_admin", "staff", "housekeeper,receptionist"]},
                             "hashed_password": {"bsonType": "string"},
                             "phone": {"bsonType": "string"},
                             "hotel_ids": {"bsonType": "array"},
@@ -321,7 +321,7 @@ class MongoDB:
                                        "room_type", "number_of_rooms"
                                    ],
                                   "properties": {
-                                      "room_type": {"enum": ["standard", "deluxe", "suite", "executive", "presidential"]},
+                                      "room_type": {"bsonType": "string"},
                                       "number_of_rooms": {"bsonType": "int"},
                                       "room_ids": {
                                            "bsonType": ["array", "null"],
@@ -377,9 +377,7 @@ class MongoDB:
                       "required": ["hotel_id", "room_type", "date", "total_rooms", "booked_rooms", "locked_rooms", "available_rooms", "updated_at"],
                       "properties": {
                            "hotel_id": {"bsonType": "string"},
-                           "room_type": {
-                               "enum": ["standard", "deluxe", "suite", "executive", "presidential"]
-                            },
+                           "room_type": {"bsonType": "string"},
                            "date": {"bsonType": "date"},
                            "total_rooms": {"bsonType": "int"},
                            "booked_rooms": {"bsonType": "int"},
@@ -401,9 +399,7 @@ class MongoDB:
                         "properties": {
                              "hotel_id": { "bsonType": "objectId" },
                              "room_number": { "bsonType": "string" },
-                             "room_type": {
-                               "enum": ["standard", "deluxe", "suite", "executive", "presidential"]
-                            },
+                             "room_type": {"bsonType": "string"},
                              "status": { "enum": ["available", "booked", "occupied", "maintenance"] },
                              "floor": { "bsonType": "int" },
 
@@ -448,7 +444,7 @@ class MongoDB:
                     "required": ["hotel_id", "room_type", "price_per_night", "base_occupancy", "max_occupancy", "room_size", "bed_type", "bed_count", "amenities", "is_smoking", "created_at", "updated_at"],
                     "properties": {
                         "hotel_id": { "bsonType": "objectId" },
-                        "room_type": {  "enum": ["standard", "deluxe", "suite", "executive", "presidential"]},
+                        "room_type": {  "bsonType": "string"},
 
                         "price_per_night": { "bsonType": "double" },
                         "price_per_night_max": { "bsonType": "double" },

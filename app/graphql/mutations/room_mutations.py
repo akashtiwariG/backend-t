@@ -11,8 +11,6 @@ from app.graphql.types.room import (
     Room,
     RoomTypeDummy,
     RoomInput,
-    
-    RoomType,
     RoomStatus,
     BedType,
     RoomTypeDummy,
@@ -85,8 +83,10 @@ class RoomMutations:
                raise ValueError(f"Floor number exceeds hotel's floor count")
 
            # Fetch and validate RoomType
+           room_type_str = room_data.room_type.lower()
+
            room_type = await db.roomTypes.find_one({
-               "room_type": room_data.room_type,
+               "room_type": room_type_str,
                "hotel_id": ObjectId(room_data.hotel_id)
            })
            if not room_type:
@@ -99,7 +99,7 @@ class RoomMutations:
             "hotel_id": ObjectId(room_data.hotel_id),
             "room_number": room_data.room_number,
             "floor": room_data.floor,
-            "room_type": room_data.room_type,
+            "room_type": room_type_str,
             "status": RoomStatus.AVAILABLE.value,
             "is_active": True,
             "created_at": now,
@@ -179,8 +179,10 @@ class RoomMutations:
                    raise ValueError(f"Floor number exceeds hotel's floor count for room {room_data.room_number}")
 
                # Validate RoomType
+               room_type_str = room_data.room_type.lower()
+               
                room_type = await db.roomTypes.find_one({
-                   "room_type": room_data.room_type,
+                   "room_type": room_type_str,
                    "hotel_id": ObjectId(room_data.hotel_id)
                })
                if not room_type:
@@ -191,7 +193,7 @@ class RoomMutations:
                    "hotel_id": ObjectId(room_data.hotel_id),
                    "room_number": room_data.room_number,
                    "floor": room_data.floor,
-                   "room_type": room_data.room_type,
+                   "room_type": room_type_str,
                    "status": RoomStatus.AVAILABLE.value,
                    "is_active": True,
                    "created_at": now,
@@ -227,7 +229,7 @@ class RoomMutations:
                    await self.upsert_room_inventory_for_date(
                        db=db,
                        hotel_id=room_data.hotel_id,
-                       room_type=room_data.room_type,
+                       room_type=room_type_str,
                        date=target_date,
                        delta_total=1,
                        delta_available=1
@@ -259,9 +261,12 @@ class RoomMutations:
                raise ValueError("Hotel not found")
 
            # Check for duplicate room type name in the hotel
+
+           room_type_str = room_type_data.room_type.lower()
+
            existing_type = await db.roomTypes.find_one({
                "hotel_id": ObjectId(room_type_data.hotel_id),
-               "room_type": room_type_data.room_type
+               "room_type": room_type_str
            })
            if existing_type:
                raise ValueError(f"Room type '{room_type_data.room_type}' already exists in this hotel")
@@ -270,7 +275,7 @@ class RoomMutations:
 
            room_type_dict = {
                "hotel_id": ObjectId(room_type_data.hotel_id),
-               "room_type": room_type_data.room_type,
+               "room_type": room_type_str,
                "price_per_night": room_type_data.price_per_night,
                "price_per_night_max": room_type_data.price_per_night_max,
                "price_per_night_min": room_type_data.price_per_night_min,
@@ -354,13 +359,13 @@ class RoomMutations:
     async def update_room_type(
        self,
        hotel_id: str,
-       room_type: RoomType,
+       room_type: str,
        update_data: UpdateRoomTypeInput
     ) -> RoomTypeDummy:
        try:
            db = MongoDB.database
 
-           room_type_str = room_type.value.lower()
+           room_type_str = room_type.lower()
            # Validate hotel exists
            hotel = await db.hotels.find_one({"_id": ObjectId(hotel_id)})
            if not hotel:

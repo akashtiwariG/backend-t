@@ -2,14 +2,14 @@ import strawberry
 from typing import List, Optional
 from datetime import datetime
 from enum import Enum
-from app.graphql.types.room import RoomType
+
 
 # ENUMS
 
 @strawberry.input
 class singleRoomAssignmentInput:
       booking_id: str
-      room_type: RoomType
+      room_type: str
       room_id: str
 
 @strawberry.enum
@@ -60,7 +60,7 @@ class GuestInput:
 
 @strawberry.input
 class RoomTypeBookingsInput:
-    room_type: RoomType
+    room_type: str
     number_of_rooms: int
     room_ids: Optional[List[str]] = None
 
@@ -135,7 +135,7 @@ class GuestDetails:
 
 @strawberry.type
 class RoomTypeBookings:
-    room_type: RoomType
+    room_type: str
     number_of_rooms: int
     room_ids: Optional[List[str]] = None
 

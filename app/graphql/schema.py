@@ -21,7 +21,7 @@ from ..graphql.types.room import (
     Room,
     RoomInput,
     RoomTypeInput,
-    RoomType,
+ 
     RoomStatus,
     BedType,
     RoomInventoryType,
@@ -70,7 +70,7 @@ class Query:
         hotel_id: str,
         check_in_date: datetime,
         check_out_date: datetime,
-        room_type: Optional[RoomType] = None,
+        room_type: Optional[str] = None,
         guests: Optional[int] = None
     ) -> List[Room]:
         return await RoomQueries().get_available_rooms(
@@ -98,12 +98,16 @@ class Query:
         return await RoomQueries().get_room(room_id)
     
     @strawberry.field
-    async def rooms(self,hotel_id: str, room_type: Optional[RoomType] = None, status: Optional[RoomStatus] = None) -> List[Room]:
+    async def rooms(self,hotel_id: str, room_type: Optional[str] = None, status: Optional[RoomStatus] = None) -> List[Room]:
         return await RoomQueries().get_rooms(hotel_id,room_type,status)
     
     @strawberry.field
-    async def get_room_type(self,hotel_id: str, room_type: RoomType) -> Optional[RoomTypeDummy]:
+    async def get_room_type(self,hotel_id: str, room_type: str) -> Optional[RoomTypeDummy]:
         return await RoomQueries().get_room_type(hotel_id,room_type)
+    
+    @strawberry.field
+    async def get_room_types(self,hotel_id:str) -> List[RoomTypeDummy]:
+        return await RoomQueries().get_room_types(hotel_id)
     
     @strawberry.field
     async def get_room_inventory(
@@ -123,7 +127,7 @@ class Query:
     async def bookings(
         self,
         hotel_id: Optional[str] = None,
-        room_type:Optional[RoomType] = None,
+        room_type:Optional[str] = None,
         room_id: Optional[List[str]] = None,
         booking_status: Optional[BookingStatus] = None,
         payment_status: Optional[PaymentStatus] = None,
@@ -288,7 +292,7 @@ class Mutation:
     async def update_room_type(
        self,
        hotel_id: str,
-       room_type: RoomType,
+       room_type: str,
        update_data: UpdateRoomTypeInput
     ) -> RoomTypeDummy:
         return await RoomMutations().update_room_type(hotel_id,room_type,update_data)
@@ -320,7 +324,7 @@ class Mutation:
         return await BookingMutations().create_booking(booking_data)
     
     @strawberry.mutation
-    async def assign_single_room_to_booking(self,booking_id: str,room_type: RoomType,room_id: str) -> Booking:
+    async def assign_single_room_to_booking(self,booking_id: str,room_type: str,room_id: str) -> Booking:
         return await BookingMutations().assign_single_room_to_booking(booking_id,room_type,room_id)
 
     @strawberry.field

@@ -6,7 +6,6 @@ from bson import ObjectId
 
 from app.graphql.types.room import (
     Room,
-    RoomType,
     RoomStatus,
     BedType,
     RoomInventoryType,
@@ -175,13 +174,13 @@ class RoomQueries:
 
 
     @strawberry.field
-    async def get_rooms(self, hotel_id: str, room_type: Optional[RoomType] = None, status: Optional[RoomStatus] = None) -> List[Room]:
+    async def get_rooms(self, hotel_id: str, room_type: Optional[str] = None, status: Optional[RoomStatus] = None) -> List[Room]:
        db = MongoDB.database
 
        # Build dynamic filter
        query = {"hotel_id": ObjectId(hotel_id)}
        if room_type:
-           query["room_type"] = room_type.value
+           query["room_type"] = room_type.lower()
        if status:
            query["status"] = status.value
        # Fetch matching rooms
@@ -208,7 +207,7 @@ class RoomQueries:
 
 
     @strawberry.field
-    async def get_room_type(self,hotel_id: str, room_type: RoomType) -> Optional[RoomTypeDummy]:
+    async def get_room_type(self,hotel_id: str, room_type: str) -> Optional[RoomTypeDummy]:
         """
         Fetch a room type by hotel ID and room type enum.
         """
@@ -223,6 +222,21 @@ class RoomQueries:
             return None
         except Exception as e:
             raise ValueError(f"Error fetching room type: {str(e)}")
+        
+    @strawberry.field
+    async def get_room_types(self,hotel_id:str) -> List[RoomTypeDummy]:
+
+        try:
+            db = MongoDB.database
+            cursor =  db.roomTypes.find({"hotel_id":ObjectId(hotel_id)})
+            results = []
+
+            async for doc in cursor:
+                results.append(RoomTypeDummy.from_db(doc))
+            return results
+        
+        except Exception as e:
+            raise ValueError(f"Error fetching room types: {str(e)}")
         
         '''@strawberry.field
     async def get_room(self, room_id: str) -> Optional[Room]:
