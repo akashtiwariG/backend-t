@@ -77,7 +77,7 @@ class BookingMutations:
               total_base += base_amount
 
           # 2. Calculate total
-          tax_amount = total_base * 0.1
+          tax_amount = 0
           total_amount = total_base + tax_amount
           booking_number = f"BK{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
 
