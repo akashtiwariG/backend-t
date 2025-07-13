@@ -1,36 +1,17 @@
 version: '3.8'
 
 services:
-  mongodb:
-    image: mongo:latest
-    container_name: hms_mongodb
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: admin_password
-      MONGO_INITDB_DATABASE: hms_db_1
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongodb_data:/data/db
-    networks:
-      - hms_network
-
   api:
     build: .
     container_name: hms_api
     environment:
-      - MONGODB_URL=mongodb://admin:admin_password@mongodb:27017/
+      - MONGODB_URL=mongodb+srv://akku:akku@cluster0.bsncfq0.mongodb.net/hms_db_1?retryWrites=true&w=majority&appName=Cluster0
       - DATABASE_NAME=hms_db_1
     ports:
       - "8000:8000"
-    depends_on:
-      - mongodb
     networks:
       - hms_network
 
 networks:
   hms_network:
     driver: bridge
-
-volumes:
-  mongodb_data:
